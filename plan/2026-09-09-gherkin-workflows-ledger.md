@@ -20,3 +20,12 @@
 - Bootstrap compatibility validation: upstream strict Godog passed 110 scenarios / 425 steps; examples race tests and vet passed (DB example has no runnable tests).
 - Stronger checkrun review added full baseline-plan comparison and dependency/producer provenance checks. Its first real run exposed an over-narrow field naming assumption (scope/evidence strings versus legitimate checked_scope/test_evidence arrays); correction pending in isolated evidence-fix branch.
 - Separate fault injection in the compatibility worktree confirmed ignored task-log header write failure. Prepared logging-repair.yaml for another real self-hosted correction, with deterministic race/vet gates. Added native Windows CI because cross-compilation alone does not verify the generated Windows cancellation behavior.
+
+## Completed live qualification and expanded scope
+
+- Real selfhost-01 completed all seven tasks at integration d95b110f45c156d5a113ce3df5ce4347f1c80636. Independent evidence checker now accepts the actual structured review schema and reports `self-host evidence verified`; original artifacts were not edited.
+- Real leading-dash Codex adapter smoke produced exact READY newline artifact with gpt-5.6-sol and the -- argument separator; source stayed unchanged.
+- Real selfhost-02-logging completed fix-logging, verify (full race suite), and vet at be19ac21ef57bbdfef46719e140e9a9b6b4e16f2. Generated regressions reproduced header/output persistence failures first; generated implementation propagates them. Independent review found no actionable production defect. Physical log failure injection is Unix-specific.
+- Native Windows hosted task cancellation checks passed. Linux CI staticcheck exposed an unused fallback helper; moved it into a non-Unix file and local staticcheck passes. Updated hosted checks pending.
+- Existing strict Godog acceptance: 110 scenarios, 425 steps passed. Examples race tests/vet passed. Built CLI failure smoke emitted valid JSON and a nonzero exit.
+- User added incremental feature/scenario implementation records and resumable executions. Separate compiler, executor, and CLI worktrees now implement this with regression-first evidence. Completion audit remains open for this expanded scope.
