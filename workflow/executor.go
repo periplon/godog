@@ -45,6 +45,11 @@ func Execute(ctx context.Context, plan *Plan, opts RunOptions) (*Result, error) 
 	if err != nil {
 		return nil, err
 	}
+	if plan.Tracking != nil {
+		if err := ValidatePlanInputs(ctx, plan, repo); err != nil {
+			return nil, err
+		}
+	}
 	output, err := createRunDirectory(repo, opts.OutputDir)
 	if err != nil {
 		return nil, err
@@ -210,7 +215,12 @@ func validatePlan(plan *Plan) error {
 	if plan.Version != 1 {
 		return fmt.Errorf("workflow: unsupported plan version %d", plan.Version)
 	}
-	if len(plan.Tasks) == 0 {
+	if plan.Tracking != nil {
+		if err := ValidateTracking(plan); err != nil {
+			return err
+		}
+	}
+	if len(plan.Tasks) == 0 && (plan.Tracking == nil || !plan.Tracking.NoOp) {
 		return errors.New("workflow: plan must contain at least one task")
 	}
 	byID := make(map[string]Task, len(plan.Tasks))
