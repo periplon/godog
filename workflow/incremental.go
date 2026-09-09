@@ -80,55 +80,29 @@ type exampleRowContext struct {
 	example semanticExample
 }
 
+type trackedCompilation struct {
+	plan              *Plan
+	spec              Spec
+	semanticScenarios []semanticScenario
+	commonDir         string
+}
+
 // CompileIncremental compiles a workflow and selects only scenario instances
 // whose semantics have not been recorded at an integrated ancestor of HEAD.
 func CompileIncremental(ctx context.Context, specPath, repoDir string) (*Plan, error) {
-	if ctx == nil {
-		return nil, errors.New("workflow: nil context")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	full, err := Compile(specPath)
+	compiled, err := buildFullTracking(ctx, specPath, repoDir)
 	if err != nil {
 		return nil, err
 	}
-	spec, _, _, err := readSpec(specPath)
-	if err != nil {
-		return nil, err
-	}
-	repo, commonDir, head, err := incrementalRepository(ctx, repoDir)
-	if err != nil {
-		return nil, err
-	}
-	scope, externalSpecPath, err := incrementalSpecScope(specPath, repo)
-	if err != nil {
-		return nil, err
-	}
-	policyFingerprint, err := semanticHash(spec)
-	if err != nil {
-		return nil, fmt.Errorf("workflow: fingerprint policy: %w", err)
-	}
-	semanticScenarios, err := compileSemanticScenarios(specPath, spec)
-	if err != nil {
-		return nil, err
-	}
-	if err := associateScenarioTasks(full, semanticScenarios); err != nil {
-		return nil, err
-	}
+	full := compiled.plan
+	spec := compiled.spec
+	semanticScenarios := compiled.semanticScenarios
+	commonDir := compiled.commonDir
+	tracking := full.Tracking
+	head := tracking.Baseline
+	scope := tracking.Spec
+	policyFingerprint := tracking.PolicyFingerprint
 
-	tracking := &PlanTracking{
-		Version:           planTrackingVersion,
-		Spec:              scope,
-		SpecPath:          externalSpecPath,
-		Baseline:          head,
-		PolicyFingerprint: policyFingerprint,
-		Scenarios:         scenarioTrackingSnapshot(semanticScenarios),
-	}
-	tracking.InputFingerprint, err = trackingInputFingerprint(policyFingerprint, tracking.Scenarios)
-	if err != nil {
-		return nil, fmt.Errorf("workflow: fingerprint tracked inputs: %w", err)
-	}
 	baseNames, bases, err := latestTrustedSnapshots(ctx, commonDir, scope, head)
 	if err != nil {
 		return nil, err
@@ -140,7 +114,6 @@ func CompileIncremental(ctx context.Context, specPath, repoDir string) (*Plan, e
 	if len(changed) == 0 {
 		full.Tasks = []Task{}
 		tracking.NoOp = true
-		full.Tracking = tracking
 		return full, nil
 	}
 
@@ -188,10 +161,7 @@ func CompileIncremental(ctx context.Context, specPath, repoDir string) (*Plan, e
 	var includeVerification func(string)
 	includeVerification = func(id string) {
 		for _, dependent := range dependents[id] {
-			if !include[dependent] {
-				include[dependent] = true
-				includePrerequisites(dependent)
-			}
+			includePrerequisites(dependent)
 			includeVerification(dependent)
 		}
 	}
@@ -231,24 +201,69 @@ func CompileIncremental(ctx context.Context, specPath, repoDir string) (*Plan, e
 		incrementalTasks = append(incrementalTasks, task)
 	}
 	full.Tasks = incrementalTasks
-	full.Tracking = tracking
 	return full, nil
 }
 
-// CompileFull produces an all-scenario plan with tracking metadata suitable
-// for recording after a full execution. Compile remains the stateless legacy API.
-func CompileFull(ctx context.Context, specPath, repoDir string) (*Plan, error) {
-	incremental, err := CompileIncremental(ctx, specPath, repoDir)
-	if err != nil {
+func buildFullTracking(ctx context.Context, specPath, repoDir string) (*trackedCompilation, error) {
+	if ctx == nil {
+		return nil, errors.New("workflow: nil context")
+	}
+	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 	full, err := Compile(specPath)
 	if err != nil {
 		return nil, err
 	}
-	full.Tracking = incremental.Tracking
+	spec, _, _, err := readSpec(specPath)
+	if err != nil {
+		return nil, err
+	}
+	repo, commonDir, head, err := incrementalRepository(ctx, repoDir)
+	if err != nil {
+		return nil, err
+	}
+	scope, externalSpecPath, err := incrementalSpecScope(specPath, repo)
+	if err != nil {
+		return nil, err
+	}
+	policyFingerprint, err := semanticHash(spec)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: fingerprint policy: %w", err)
+	}
+	semanticScenarios, err := compileSemanticScenarios(specPath, spec)
+	if err != nil {
+		return nil, err
+	}
+	if err := associateScenarioTasks(full, semanticScenarios); err != nil {
+		return nil, err
+	}
+
+	tracking := &PlanTracking{
+		Version:           planTrackingVersion,
+		Spec:              scope,
+		SpecPath:          externalSpecPath,
+		Baseline:          head,
+		PolicyFingerprint: policyFingerprint,
+		Scenarios:         scenarioTrackingSnapshot(semanticScenarios),
+	}
+	tracking.InputFingerprint, err = trackingInputFingerprint(policyFingerprint, tracking.Scenarios)
+	if err != nil {
+		return nil, fmt.Errorf("workflow: fingerprint tracked inputs: %w", err)
+	}
+	full.Tracking = tracking
+	return &trackedCompilation{plan: full, spec: spec, semanticScenarios: semanticScenarios, commonDir: commonDir}, nil
+}
+
+// CompileFull produces an all-scenario plan with tracking metadata suitable
+// for recording after a full execution. Compile remains the stateless legacy API.
+func CompileFull(ctx context.Context, specPath, repoDir string) (*Plan, error) {
+	compiled, err := buildFullTracking(ctx, specPath, repoDir)
+	if err != nil {
+		return nil, err
+	}
+	full := compiled.plan
 	full.Tracking.NoOp = false
-	full.Tracking.BaseRecords = nil
 	full.Tracking.Tasks = nil
 	keyByID := make(map[string]string, len(full.Tracking.Scenarios))
 	for _, scenario := range full.Tracking.Scenarios {

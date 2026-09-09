@@ -10,6 +10,7 @@ Compile only changed or new Gherkin scenario instances using a durable, content-
 2. Add optional tracking metadata without changing legacy `Compile` output.
 3. Implement incremental compilation and immutable record publication under the Git common directory.
 4. Run focused, race, full repository, and historical-output checks; review registry and semantic matching independently.
+5. Ensure tracked full compilation never reads implementation history and verification descendants retain every prerequisite branch.
 
 ## Boundaries
 

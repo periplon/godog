@@ -273,6 +273,52 @@ func TestCompileFullAlwaysTargetsAllScenariosWithTracking(t *testing.T) {
 	}
 }
 
+func TestCompileFullIgnoresCorruptImplementationHistory(t *testing.T) {
+	repo, spec := newIncrementalFixture(t)
+	baseline := mustCompileIncremental(t, spec, repo)
+	recordSuccessfulImplementation(t, baseline, repo)
+	records := testRecordFiles(t, repo)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(records[0]), strings.Repeat("0", 64)+".json"), []byte("{broken"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	full, err := CompileFull(context.Background(), spec, repo)
+	if err != nil {
+		t.Fatalf("CompileFull() read implementation history: %v", err)
+	}
+	if full.Tracking == nil || full.Tracking.NoOp || len(full.Tracking.BaseRecords) != 0 {
+		t.Fatalf("tracked full plan = %#v, want fresh tracking without base records", full)
+	}
+}
+
+func TestCompileIncrementalVerificationIncludesAllPrerequisiteBranches(t *testing.T) {
+	repo, spec := newIncrementalFixtureWithDiamond(t)
+	baseline := mustCompileIncremental(t, spec, repo)
+	recordSuccessfulImplementation(t, baseline, repo)
+
+	changed := strings.Replace(readFile(t, filepath.Join(repo, "features", "behavior.feature")), "existing result appears", "changed result appears", 1)
+	writeTestFile(t, repo, "features/behavior.feature", changed)
+	plan := mustCompileIncremental(t, spec, repo)
+
+	if got, want := taskIDs(plan.Tasks), []string{"prepare-a", "implement", "prepare-b", "gate"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("incremental task order = %v, want complete verification dependency closure %v", got, want)
+	}
+	included := make(map[string]bool, len(plan.Tasks))
+	for _, task := range plan.Tasks {
+		included[task.ID] = true
+	}
+	for _, task := range plan.Tasks {
+		for _, need := range task.Needs {
+			if !included[need] {
+				t.Fatalf("task %q depends on omitted task %q", task.ID, need)
+			}
+		}
+	}
+	if err := ValidateTracking(plan); err != nil {
+		t.Fatalf("ValidateTracking() error = %v", err)
+	}
+}
+
 func TestRecordImplementationAfterPolicyChangeCarriesNoStaleEvidence(t *testing.T) {
 	repo, spec := newIncrementalFixture(t)
 	baseline := mustCompileIncremental(t, spec, repo)
@@ -338,6 +384,39 @@ tasks:
 `)
 	gitRun(t, repo, "add", "workflow.yaml", "features")
 	gitRun(t, repo, "commit", "-q", "-m", "test: add workflow")
+	return repo, spec
+}
+
+func newIncrementalFixtureWithDiamond(t *testing.T) (string, string) {
+	t.Helper()
+	repo := newTestRepository(t)
+	writeTestFile(t, repo, "features/setup.feature", `Feature: Setup
+  Scenario: Prepare repository
+    Given setup exists
+`)
+	writeTestFile(t, repo, "features/behavior.feature", behaviorFeature(""))
+	spec := writeTestFile(t, repo, "workflow.yaml", `version: 1
+name: incremental-diamond
+model: codex
+features: [features/*.feature]
+tasks:
+  - id: prepare-a
+    features: [features/setup.feature]
+    run: [true]
+  - id: implement
+    needs: [prepare-a]
+    features: [features/behavior.feature]
+    prompt: Implement selected behavior.
+  - id: prepare-b
+    features: [features/setup.feature]
+    run: [true]
+  - id: gate
+    needs: [implement, prepare-b]
+    features: [features/setup.feature]
+    run: [true]
+`)
+	gitRun(t, repo, "add", "workflow.yaml", "features")
+	gitRun(t, repo, "commit", "-q", "-m", "test: add diamond workflow")
 	return repo, spec
 }
 
