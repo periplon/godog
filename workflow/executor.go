@@ -413,7 +413,9 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 	result := TaskResult{ID: task.ID, Status: "running", StartedAt: startedAt}
 	worktree := filepath.Join(output, "worktrees", fmt.Sprintf("%03d-%s", index+1, safeName(task.ID)))
 	logPath := filepath.Join(output, "logs", fmt.Sprintf("%03d-%s.log", index+1, safeName(task.ID)))
-	result.Worktree = worktree
+	if err := appendLog(logPath, []byte("create worktree: "+worktree+"\n")); err != nil {
+		return finishTask(result, "failed", fmt.Errorf("open task log: %w", err))
+	}
 	result.Log = logPath
 	update(result)
 
@@ -421,11 +423,11 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	if outputBytes, err := commandOutput(ctx, repo, "git", "worktree", "add", "--detach", worktree, baseline); err != nil {
+		appendLog(logPath, append(outputBytes, []byte("create worktree failed: "+err.Error()+"\n")...))
 		return finishTask(result, "failed", fmt.Errorf("create worktree: %w: %s", err, strings.TrimSpace(string(outputBytes))))
 	}
-	if err := appendLog(logPath, []byte("worktree: "+worktree+"\n")); err != nil {
-		return finishTask(result, "failed", fmt.Errorf("open task log: %w", err))
-	}
+	result.Worktree = worktree
+	update(result)
 
 	needs := append([]string(nil), task.Needs...)
 	sort.Strings(needs)
@@ -555,7 +557,14 @@ func integrateResults(ctx context.Context, repo, baseline, output string, result
 		message := "chore(workflow): integrate task " + task.ID
 		mergeOutput, mergeErr := commandOutput(ctx, worktree, "git", "merge", "--no-ff", "--no-gpg-sign", "-m", message, task.Commit)
 		if mergeErr != nil {
-			return fmt.Errorf("workflow: integration conflict for task %q: %w: %s", task.ID, mergeErr, strings.TrimSpace(string(mergeOutput)))
+			if ctx.Err() != nil {
+				return fmt.Errorf("workflow: integration cancelled for task %q: %w", task.ID, ctx.Err())
+			}
+			unmerged, inspectErr := commandOutput(ctx, worktree, "git", "diff", "--name-only", "--diff-filter=U")
+			if inspectErr == nil && len(bytes.TrimSpace(unmerged)) > 0 {
+				return fmt.Errorf("workflow: integration conflict for task %q: %w: %s", task.ID, mergeErr, strings.TrimSpace(string(mergeOutput)))
+			}
+			return fmt.Errorf("workflow: integration merge failed for task %q: %w: %s", task.ID, mergeErr, strings.TrimSpace(string(mergeOutput)))
 		}
 	}
 	headBytes, err := commandOutput(ctx, worktree, "git", "rev-parse", "HEAD")
