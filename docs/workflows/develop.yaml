@@ -8,7 +8,6 @@ tasks:
     features:
       - ../../workflow/features/compiler.feature
       - ../../workflow/features/cli.feature
-      - ../../workflow/features/dogfood.feature
     prompt: |
       Extend this Godog implementation workflow package using the supplied Gherkin
       requirements. Own workflow/acceptance_test.go only. Add executable Godog
@@ -18,7 +17,8 @@ tasks:
       or silently skip missing behavior. Write tests first, observe expected
       failures, minimally fix your owned test harness, run go test ./workflow.
       If production behavior is defective, report exact evidence; do not edit
-      compiler.go because another independent task owns production review fixes.
+      compiler.go. A dependent reconcile task owns production review fixes.
+      Do not bind dogfood.feature: the outer run is verified after completion.
       Do not edit the feature requirements or workflow policy. Do not push or
       create PRs. Implement code, not merely recommendations. Record concise
       test evidence in your final response. Use installed dependencies only.
@@ -28,13 +28,54 @@ tasks:
     prompt: |
       Review and improve the implementation workflow executor against the supplied
       Gherkin requirements. Own workflow/executor*.go and workflow/process*.go only.
-      Find a concrete execution correctness bug or a missing edge-case acceptance
-      regression; write and run a failing regression first, then make the minimum
-      production correction and run go test ./workflow. Prioritize cancellation,
+      Add regression coverage for process-tree cancellation and dependency failure
+      propagation. Write tests first, run them, and fix production defects only
+      when the new tests expose them; run go test ./workflow. Prioritize cancellation,
       dependency integration, Codex argument fidelity, and truthful failure status.
       Do not modify compiler, shared types, CLI, feature requirements, or DSL files.
       Do not push or create PRs. Produce actual tested implementation improvements.
       Record red/green test evidence and limitations in your final response.
-  - id: verify
+  - id: review-compiler
     needs: [acceptance, harden]
+    features:
+      - ../../workflow/features/compiler.feature
+      - ../../workflow/features/cli.feature
+    prompt: |
+      Independently review the workflow compiler and CLI against these requirements.
+      Inspect implementation and tests. Run targeted checks and adversarial probes.
+      Do not edit production code or tests. Write your review to
+      .workflow-review/compiler.json as an object with a findings array; each finding
+      has id, severity, file, description, and reproduction fields. An empty array
+      means no actionable defect found. Record checked scope and test evidence in
+      the same object. Do not invent defects. Do not push or create PRs.
+  - id: review-execution
+    needs: [acceptance, harden]
+    features:
+      - ../../workflow/features/executor.feature
+    prompt: |
+      Independently review worktree isolation, process execution, retries, cancellation,
+      dependency integration, artifacts and failure truthfulness. Run adversarial
+      checks. Do not edit production code or tests. Write your review to
+      .workflow-review/execution.json as an object with a findings array; each finding
+      has id, severity, file, description, and reproduction fields. An empty array
+      means no actionable defect found. Include checked scope and test evidence.
+      Do not invent defects. Do not push or create PRs.
+  - id: reconcile
+    needs: [review-compiler, review-execution]
+    prompt: |
+      Read both .workflow-review/*.json independent reviews. Resolve every actionable
+      finding in compiler, executor, shared types, CLI, or tests with a failing
+      regression first followed by the minimum fix. Run targeted tests after each
+      fix. Keep original review files intact. Record each finding's disposition,
+      regression, red/green evidence, and any unresolved blocker in
+      .workflow-review/resolution.json with an unresolved array (empty only if all
+      findings are fixed or disproven by concrete evidence). Check CLI behavior
+      using a built binary as a subprocess, including nonzero failure exit and
+      valid JSON stdout. Do not change feature requirements or weaken tests.
+      Do not push or create PRs.
+  - id: verify
+    needs: [reconcile]
     run: [go, test, -race, ./...]
+  - id: vet
+    needs: [reconcile]
+    run: [go, vet, ./...]
