@@ -26,3 +26,30 @@ If everything passes, you're ready to hack!
 ## Changing dependencies
 
 If dependencies have changed, you will also need to update the _examples module. `go mod tidy` should be sufficient.
+
+## Common development commands
+
+With Go and [just](https://github.com/casey/just) installed (recipes tested with
+just 1.58.0), run these from the repository:
+
+```sh
+just                         # List commands; also: just help
+just build                   # Build _artifacts/godog
+just test                    # Root-module tests with the race detector
+just test -run TestName       # Focus on a Go test
+just test-examples            # Test the separate _examples module
+just bdd                     # Strict Godog feature tests
+just godog workflow --help   # Explore workflow commands
+just check                   # Formatting, vet, both modules, and feature tests
+```
+
+`just fmt` formats Go files; `just fmt-check` checks without writing.
+`just coverage` writes `_artifacts/coverage.txt`; `just coverage-html` opens it.
+Extra arguments to `test`, `test-examples`, `coverage`, `bdd`, and `godog` are
+forwarded literally; quote arguments containing spaces. Test recipes always
+include `./...`, so use Go flags such as `-run` to filter tests.
+
+`just check` is a local check suite. Hosted CI additionally runs Staticcheck
+and platform/version jobs. Existing Make targets remain available.
+Recipe contract tests run through `go test ./internal/devtools`; they skip when
+just is absent. CI sets `REQUIRE_JUST=1` to require them.
