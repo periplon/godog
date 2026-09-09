@@ -235,7 +235,15 @@ func Execute(ctx context.Context, plan *Plan, opts RunOptions) (*Result, error) 
 			return finish("failed", errors.New("workflow: one or more tasks failed or were blocked"))
 		}
 	}
-	return finish("success", nil)
+	if _, err := finish("success", nil); err != nil {
+		return result, err
+	}
+	if plan.Tracking != nil && !plan.Tracking.NoOp {
+		if err := RecordImplementation(ctx, plan, result, repo); err != nil {
+			return finish("failed", fmt.Errorf("workflow: record implementation: %w", err))
+		}
+	}
+	return result, nil
 }
 
 func validatePlan(plan *Plan) error {

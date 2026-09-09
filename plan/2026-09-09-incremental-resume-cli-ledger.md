@@ -9,3 +9,5 @@
 - Logging source freeze ended after successful run; source remains separate from this CLI branch.
 - Executor integration red: tracked plans compiled against an old HEAD or transient feature edits still executed after source drift. Added execution-time ValidatePlanInputs before artifact creation; both regression cases pass.
 - No-op execution red: explicit tracked no-op failed with `plan must contain at least one task`. Validated tracking now permits only the explicit no-op form; it writes a normal result without executing tasks. Focused regression passes.
+- Built-binary CLI regression now reaches actual behavior: a successful full run did not seed implementation history, so the next default plan returned one task instead of zero. Connected automatic record publication after persisted successful Execute/Resume results; failed and no-op runs do not publish new implementation records.
+- Resume now validates tracked source inputs before changing the saved execution.

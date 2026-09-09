@@ -84,6 +84,11 @@ func Resume(ctx context.Context, outputDir string, opts RunOptions) (*Result, er
 	if repo != manifest.Repository || commonDir != manifest.GitCommonDir || baseline != manifest.Baseline {
 		return nil, errors.New("workflow: source repository identity or baseline does not match immutable run manifest")
 	}
+	if plan.Tracking != nil {
+		if err := ValidatePlanInputs(ctx, plan, repo); err != nil {
+			return nil, err
+		}
+	}
 	if opts.Jobs < 0 {
 		return nil, errors.New("workflow: jobs must not be negative")
 	}
@@ -131,6 +136,15 @@ func Resume(ctx context.Context, outputDir string, opts RunOptions) (*Result, er
 	finishRunRecord(result, status)
 	if err := writeJSONAtomic(filepath.Join(output, "result.json"), result); err != nil && runErr == nil {
 		runErr = fmt.Errorf("workflow: persist resume result: %w", err)
+	}
+	if runErr == nil && plan.Tracking != nil && !plan.Tracking.NoOp {
+		if err := RecordImplementation(ctx, plan, result, repo); err != nil {
+			runErr = fmt.Errorf("workflow: record resumed implementation: %w", err)
+			finishRunRecord(result, "failed")
+			if persistErr := writeJSONAtomic(filepath.Join(output, "result.json"), result); persistErr != nil {
+				runErr = fmt.Errorf("%w (persist result: %v)", runErr, persistErr)
+			}
+		}
 	}
 	return result, runErr
 }
