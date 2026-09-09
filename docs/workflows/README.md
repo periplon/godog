@@ -18,6 +18,39 @@ concurrent file edits, not machine access. Linked worktrees also share Git refs
 and repository configuration. Use workflow files and commands you trust. Codex must be installed and authenticated; deterministic tasks only need
 the executables declared by the workflow.
 
+## Generate a workflow from features
+
+```sh
+/tmp/godog workflow generate 'features/*.feature' \
+  --output workflow.yaml --model gpt-5.6-sol
+/tmp/godog workflow plan workflow.yaml --full
+```
+
+`generate` writes a new workflow YAML without calling Codex or executing tasks.
+It validates the feature files, sorts and deduplicates their paths, and creates
+one implementation prompt task per feature in a serial dependency chain plus
+a final review task. Task IDs are derived from paths. With unchanged inputs,
+options and relative directory layout, generation produces the same bytes.
+Generated implementation prompts request failing tests before implementation;
+`--prompt 'Additional project instructions'` adds instructions to implementation
+and review tasks.
+`--model` is required and selects the model used when the workflow is run.
+
+Feature paths and quoted globs resolve relative to `--repo` (default `.`).
+`--output` resolves relative to the current directory; its parent must exist and
+an existing output is never overwritten. Generated feature references are
+relative to the output file, so nested workflow directories work. No Git
+repository or Codex installation is needed to generate or inspect a full plan.
+
+Review and edit the YAML before running it. Generation cannot infer dependencies
+between features or the project's test commands. The conservative chain lets
+each implementation build on earlier commits; adjust `needs` when features have
+a known dependency order or can safely run independently. Add `run` tasks for
+deterministic verification. Incremental planning may retain unchanged earlier
+implementation tasks as prerequisites. Codex implementation
+and review results are not deterministic; a successful review task does not
+prove correctness.
+
 ## Workflow DSL version 1
 
 ```yaml
