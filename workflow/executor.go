@@ -63,10 +63,20 @@ func Execute(ctx context.Context, plan *Plan, opts RunOptions) (*Result, error) 
 	if err := writeJSONAtomic(filepath.Join(output, "plan.json"), plan); err != nil {
 		return nil, fmt.Errorf("workflow: write plan snapshot: %w", err)
 	}
+	lock, manifest, err := initializeDurableRun(ctx, output, repo, baseline)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.release()
+	ctx = contextWithExecutionLock(ctx, lock)
 
 	tasks := append([]Task(nil), plan.Tasks...)
 	sort.Slice(tasks, func(i, j int) bool { return tasks[i].ID < tasks[j].ID })
-	result := &Result{Baseline: baseline, Tasks: make([]TaskResult, len(tasks))}
+	result := &Result{
+		Baseline: baseline, Repository: repo, RunDirectory: output, PlanDigest: manifest.PlanDigest,
+		Tasks: make([]TaskResult, len(tasks)),
+		Runs:  []RunRecord{{Sequence: 1, StartedAt: timestamp(time.Now()), Status: "running"}},
+	}
 	indices := make(map[string]int, len(tasks))
 	states := make(map[string]string, len(tasks))
 	for i := range tasks {
@@ -89,6 +99,17 @@ func Execute(ctx context.Context, plan *Plan, opts RunOptions) (*Result, error) 
 			}
 		}
 	}
+	finish := func(status string, runErr error) (*Result, error) {
+		finishRunRecord(result, status)
+		persist()
+		if persistErr != nil {
+			if runErr != nil {
+				return result, fmt.Errorf("%w (persist result: %v)", runErr, persistErr)
+			}
+			return result, fmt.Errorf("workflow: persist result: %w", persistErr)
+		}
+		return result, runErr
+	}
 	update := func(taskResult TaskResult) {
 		resultMu.Lock()
 		result.Tasks[indices[taskResult.ID]] = taskResult
@@ -102,7 +123,7 @@ func Execute(ctx context.Context, plan *Plan, opts RunOptions) (*Result, error) 
 	}
 	persist()
 	if persistErr != nil {
-		return result, fmt.Errorf("workflow: persist initial result: %w", persistErr)
+		return finish("failed", fmt.Errorf("workflow: persist initial result: %w", persistErr))
 	}
 
 	type completion struct {
@@ -170,42 +191,51 @@ func Execute(ctx context.Context, plan *Plan, opts RunOptions) (*Result, error) 
 			if terminal == len(tasks) {
 				break
 			}
-			return result, errors.New("workflow: scheduler made no progress")
+			return finish("failed", errors.New("workflow: scheduler made no progress"))
 		}
 		done := <-completed
 		running--
 		terminal++
+		if done.result.Status == "success" {
+			checkpoint, checkpointErr := writeTaskCheckpoint(output, manifest, tasksByID(tasks)[done.id], done.result, result, indices)
+			if checkpointErr != nil {
+				done.result = finishTask(done.result, "failed", checkpointErr)
+				done.result.Commit = ""
+			} else {
+				done.result.Checkpoint = checkpoint
+			}
+		}
 		states[done.id] = done.result.Status
 		update(done.result)
 	}
 
 	if persistErr != nil {
-		return result, fmt.Errorf("workflow: persist result: %w", persistErr)
+		return finish("failed", fmt.Errorf("workflow: persist result: %w", persistErr))
 	}
 	if ctx.Err() != nil {
-		return result, ctx.Err()
+		return finish("cancelled", ctx.Err())
 	}
 	if err := verifyRepositoryUnchanged(ctx, repo, baseline); err != nil {
-		return result, err
+		return finish("failed", err)
 	}
 
 	integrationErr := integrateResults(ctx, repo, baseline, output, result)
 	persist()
 	if persistErr != nil {
-		return result, fmt.Errorf("workflow: persist result: %w", persistErr)
+		return finish("failed", fmt.Errorf("workflow: persist result: %w", persistErr))
 	}
 	if integrationErr != nil {
-		return result, integrationErr
+		return finish("failed", integrationErr)
 	}
 	if err := verifyRepositoryUnchanged(ctx, repo, baseline); err != nil {
-		return result, err
+		return finish("failed", err)
 	}
 	for _, task := range result.Tasks {
 		if task.Status != "success" {
-			return result, errors.New("workflow: one or more tasks failed or were blocked")
+			return finish("failed", errors.New("workflow: one or more tasks failed or were blocked"))
 		}
 	}
-	return result, nil
+	return finish("success", nil)
 }
 
 func validatePlan(plan *Plan) error {
@@ -419,11 +449,15 @@ func dependenciesSucceeded(task Task, states map[string]string) bool {
 }
 
 func executeTask(parent context.Context, repo, baseline, output string, index int, task Task, codexBinary string, aggregate *Result, indices map[string]int, update func(TaskResult)) TaskResult {
-	startedAt := timestamp(time.Now())
-	result := TaskResult{ID: task.ID, Status: "running", StartedAt: startedAt}
 	worktree := filepath.Join(output, "worktrees", fmt.Sprintf("%03d-%s", index+1, safeName(task.ID)))
 	logPath := filepath.Join(output, "logs", fmt.Sprintf("%03d-%s.log", index+1, safeName(task.ID)))
-	if err := appendLog(logPath, []byte("create worktree: "+worktree+"\n")); err != nil {
+	return executeTaskAt(parent, repo, baseline, worktree, logPath, "create worktree", 0, "", task, codexBinary, aggregate, indices, update)
+}
+
+func executeTaskAt(parent context.Context, repo, baseline, worktree, logPath, createDescription string, attemptOffset int, priorFeedback string, task Task, codexBinary string, aggregate *Result, indices map[string]int, update func(TaskResult)) TaskResult {
+	startedAt := timestamp(time.Now())
+	result := TaskResult{ID: task.ID, Status: "running", Attempts: attemptOffset, StartedAt: startedAt}
+	if err := appendLog(logPath, []byte(createDescription+": "+worktree+"\n")); err != nil {
 		return finishTask(result, "failed", fmt.Errorf("initialize task log: %w", err))
 	}
 	result.Log = logPath
@@ -464,13 +498,16 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 	setupHead := strings.TrimSpace(string(setupHeadBytes))
 
 	prompt := task.Prompt
+	if len(task.Run) == 0 && attemptOffset > 0 && priorFeedback != "" {
+		prompt = retryPrompt(task.Prompt, attemptOffset, priorFeedback)
+	}
 	for attempt := 1; attempt <= task.Attempts; attempt++ {
 		if err := ctx.Err(); err != nil {
 			return finishTask(result, statusForParent(parent), err)
 		}
-		result.Attempts = attempt
+		result.Attempts = attemptOffset + attempt
 		update(result)
-		tail, exitCode, runErr := runAttempt(ctx, worktree, logPath, task, codexBinary, prompt, attempt)
+		tail, exitCode, runErr := runAttempt(ctx, worktree, logPath, task, codexBinary, prompt, result.Attempts)
 		if err := ctx.Err(); err != nil {
 			return finishTask(result, statusForParent(parent), err)
 		}
@@ -490,7 +527,7 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 			return finishTask(result, "failed", failure)
 		}
 		if len(task.Run) == 0 {
-			prompt = retryPrompt(task.Prompt, attempt, tail)
+			prompt = retryPrompt(task.Prompt, result.Attempts, tail)
 		}
 	}
 	return finishTask(result, "failed", errors.New("attempt loop ended unexpectedly"))

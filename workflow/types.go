@@ -83,12 +83,27 @@ type TaskResult struct {
 	Commit     string `json:"commit,omitempty"`
 	Log        string `json:"log,omitempty"`
 	Error      string `json:"error,omitempty"`
+	Checkpoint string `json:"checkpoint,omitempty"`
+}
+
+// RunRecord describes one initial or resumed execution of a durable run.
+type RunRecord struct {
+	Sequence   int          `json:"sequence"`
+	Resumed    bool         `json:"resumed"`
+	StartedAt  string       `json:"started_at"`
+	FinishedAt string       `json:"finished_at,omitempty"`
+	Status     string       `json:"status"`
+	Tasks      []TaskResult `json:"tasks,omitempty"`
 }
 type Result struct {
 	Baseline            string       `json:"baseline"`
+	Repository          string       `json:"repository,omitempty"`
+	RunDirectory        string       `json:"run_directory,omitempty"`
+	PlanDigest          string       `json:"plan_digest,omitempty"`
 	Tasks               []TaskResult `json:"tasks"`
 	IntegrationWorktree string       `json:"integration_worktree,omitempty"`
 	Commit              string       `json:"commit,omitempty"`
+	Runs                []RunRecord  `json:"runs,omitempty"`
 }
 
 // Runner executes a compiled plan. Implementations must respect cancellation.

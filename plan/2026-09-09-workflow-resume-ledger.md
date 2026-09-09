@@ -1,0 +1,11 @@
+# Durable workflow resume ledger
+
+- 2026-09-09: Started from root `509cab7` and cherry-picked the completed logging fix `d97e4ad` as `c542357` before touching executor code.
+- 2026-09-09: Red: `go test ./workflow -run 'TestResume' -count=1` failed to compile because `Resume` was undefined. After the first implementation, the same suite failed because initial `Execute` runs had no `run.json`; this required both entry points to share the durable protocol.
+- 2026-09-09: Added immutable `run.json` identity (canonical repository/common Git directory, baseline, and plan digest), absolute `run_directory`, append-only run history snapshots, aggregate journals, and per-task success checkpoints written before the aggregate success update.
+- 2026-09-09: Added fresh-budget resume scheduling with cumulative attempt counts, new retained `-resume-N` worktrees/logs, validated successful-task reuse, prior Codex failure feedback, dependency ancestry validation, and integration reconstruction from checkpoints.
+- 2026-09-09: Red: the altered-checkpoint test initially passed because the fixture changed an ignored top-level field. Correcting it to alter `task.commit` produced the intended rejection. Checkpoint validation now also hashes and contains the recorded log and checks the clean worktree HEAD.
+- 2026-09-09: Review found filesystem collisions between `a.b`/`a_b` and case-folded `a`/`A`; checkpoint filenames now use the SHA-256 task-ID digest and the regression covers both pairs.
+- 2026-09-09: Added nonblocking crash-safe locks. Unix and Windows task children inherit the lock handle; the parent closes without explicitly unlocking, so a crash-left process tree prevents duplicate resume until it exits. Other platforms fail closed with a stale sentinel.
+- 2026-09-09: Red: the crash regression first attempted resume as soon as the child wrote its completion marker, before the shell released its inherited lock. The test now waits by retrying only the expected lock error and proves resume succeeds after handle release.
+- 2026-09-09: Green: `go test -race ./workflow` (`ok`, 18.735s), `go test ./...` (all packages), `go vet ./workflow`, and Linux/Windows amd64 workflow test cross-compilation.

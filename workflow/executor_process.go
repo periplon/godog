@@ -10,6 +10,7 @@ func runTaskCommand(ctx context.Context, cmd *exec.Cmd) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	attachExecutionLock(ctx, cmd)
 	configureTaskCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
