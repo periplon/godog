@@ -44,13 +44,15 @@ type RunOptions struct {
 	CodexBinary string
 }
 type TaskResult struct {
-	ID       string `json:"id"`
-	Status   string `json:"status"`
-	Attempts int    `json:"attempts"`
-	Worktree string `json:"worktree,omitempty"`
-	Commit   string `json:"commit,omitempty"`
-	Log      string `json:"log,omitempty"`
-	Error    string `json:"error,omitempty"`
+	ID         string `json:"id"`
+	Status     string `json:"status"`
+	Attempts   int    `json:"attempts"`
+	StartedAt  string `json:"started_at,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"`
+	Worktree   string `json:"worktree,omitempty"`
+	Commit     string `json:"commit,omitempty"`
+	Log        string `json:"log,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 type Result struct {
 	Baseline            string       `json:"baseline"`
