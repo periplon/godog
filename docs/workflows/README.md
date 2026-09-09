@@ -103,3 +103,14 @@ The bootstrap is written before the runner exists. Actual self-hosted run eviden
 and review findings are tracked in the dated files under [plan](../../plan).
 Ordinary CI uses fake Codex executables for repeatable adapter tests and does not
 require a paid model session. The explicit development workflow uses real Codex.
+
+After a real self-hosted run, validate its evidence independently of the running
+workflow:
+
+```sh
+go run ./docs/workflows/checkrun /absolute/path/to/run-directory
+```
+
+This checks recorded tasks, commits, worktrees, overlapping implementation work,
+review artifacts and unresolved findings. It complements test results; it does
+not prove that arbitrary model-generated code is correct.

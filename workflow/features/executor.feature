@@ -41,3 +41,14 @@ Feature: Isolated implementation workflow execution
     When the workflow context is cancelled
     Then execution stops and returns failure
     And no unfinished task is reported as successful
+
+  Scenario: Verify the red phase of test-driven development
+    Given a command task expecting exit code 1
+    When that command exits with code 1
+    Then the task succeeds and its implementation successor may run
+
+  Scenario: Enforce a task timeout
+    Given a task with a finite timeout
+    When its command exceeds the timeout
+    Then the task fails and its descendants are blocked
+    And cancellation is never accepted as an expected command exit
