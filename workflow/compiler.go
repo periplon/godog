@@ -82,31 +82,18 @@ func readSpec(specPath string) (Spec, []bool, string, error) {
 }
 
 func taskFieldPresence(content []byte, field string) ([]bool, error) {
-	var document yaml.Node
-	if err := yaml.Unmarshal(content, &document); err != nil {
+	// Decode mappings so aliases and YAML merges have the same semantics as Spec.
+	var raw struct {
+		Tasks []map[string]yaml.Node `yaml:"tasks"`
+	}
+	if err := yaml.Unmarshal(content, &raw); err != nil {
 		return nil, err
 	}
-	if len(document.Content) == 0 || len(document.Content[0].Content) == 0 {
-		return nil, nil
+	present := make([]bool, len(raw.Tasks))
+	for i, task := range raw.Tasks {
+		_, present[i] = task[field]
 	}
-	root := document.Content[0]
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		if root.Content[i].Value != "tasks" {
-			continue
-		}
-		sequence := root.Content[i+1]
-		present := make([]bool, len(sequence.Content))
-		for taskIndex, task := range sequence.Content {
-			for j := 0; j+1 < len(task.Content); j += 2 {
-				if task.Content[j].Value == field {
-					present[taskIndex] = true
-					break
-				}
-			}
-		}
-		return present, nil
-	}
-	return nil, nil
+	return present, nil
 }
 
 func compileFeatures(specDir string, selectors []string) ([]compiledFeature, error) {

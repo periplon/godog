@@ -204,3 +204,19 @@ func taskIDs(tasks []Task) []string {
 	}
 	return ids
 }
+
+func TestCompileRejectsZeroAttemptsThroughYAMLMerge(t *testing.T) {
+	dir := t.TempDir()
+	writeTestFile(t, dir, "sample.feature", "Feature: merged policy\n Scenario: one\n  Given a requirement\n")
+	spec := writeTestFile(t, dir, "workflow.yaml", `version: 1
+features: [sample.feature]
+<<:
+  tasks:
+    - id: check
+      run: [true]
+      attempts: 0
+`)
+	if _, err := Compile(spec); err == nil || !strings.Contains(err.Error(), "attempts must be between 1 and 5") {
+		t.Fatalf("merged explicit zero attempts must fail, got %v", err)
+	}
+}
