@@ -607,20 +607,3 @@ func waitFile(path string) error {
 	}
 	return fmt.Errorf("timed out waiting for %s", path)
 }
-
-func updateJSON(path string, edit func(map[string]any)) error {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	var v map[string]any
-	if err := json.Unmarshal(b, &v); err != nil {
-		return err
-	}
-	edit(v)
-	b, err = json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(path, append(b, '\n'), 0o600)
-}

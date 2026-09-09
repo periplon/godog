@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -347,13 +346,4 @@ func waitForResumeFile(t *testing.T, path string) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("timed out waiting for " + path)
-}
-
-func readCount(t *testing.T, path string) int {
-	t.Helper()
-	value, err := strconv.Atoi(strings.TrimSpace(readFile(t, path)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return value
 }
