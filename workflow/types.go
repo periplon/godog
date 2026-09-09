@@ -12,13 +12,15 @@ type Spec struct {
 	Tasks    []TaskSpec `yaml:"tasks" json:"tasks"`
 }
 type TaskSpec struct {
-	ID       string   `yaml:"id" json:"id"`
-	Needs    []string `yaml:"needs" json:"needs"`
-	Features []string `yaml:"features" json:"features"`
-	Run      []string `yaml:"run" json:"run,omitempty"`
-	Prompt   string   `yaml:"prompt" json:"prompt,omitempty"`
-	Model    string   `yaml:"model" json:"model,omitempty"`
-	Attempts int      `yaml:"attempts" json:"attempts"`
+	ExpectExit int      `yaml:"expected_exit" json:"expected_exit"`
+	Timeout    string   `yaml:"timeout" json:"timeout,omitempty"`
+	ID         string   `yaml:"id" json:"id"`
+	Needs      []string `yaml:"needs" json:"needs"`
+	Features   []string `yaml:"features" json:"features"`
+	Run        []string `yaml:"run" json:"run,omitempty"`
+	Prompt     string   `yaml:"prompt" json:"prompt,omitempty"`
+	Model      string   `yaml:"model" json:"model,omitempty"`
+	Attempts   int      `yaml:"attempts" json:"attempts"`
 }
 type Scenario struct {
 	ID    string   `json:"id"`
