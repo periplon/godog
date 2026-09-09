@@ -177,18 +177,27 @@ func (w *recoveryAcceptance) planIncrementally() error {
 }
 
 func (w *recoveryAcceptance) insertScenario() error {
-	return write(w.repo, "features/behavior.feature", strings.Replace(behaviorFeature("shared context", "first result"), "  Scenario: First", "  Scenario: Added\n    When added action runs\n    Then added result appears\n\n  Scenario: First", 1))
+	if err := write(w.repo, "features/behavior.feature", strings.Replace(behaviorFeature("shared context", "first result"), "  Scenario: First", "  Scenario: Added\n    When added action runs\n    Then added result appears\n\n  Scenario: First", 1)); err != nil {
+		return err
+	}
+	return w.planIncrementally()
 }
 
 func (w *recoveryAcceptance) changeScenario() error {
-	return write(w.repo, "features/behavior.feature", behaviorFeature("shared context", "changed result"))
+	if err := write(w.repo, "features/behavior.feature", behaviorFeature("shared context", "changed result")); err != nil {
+		return err
+	}
+	return w.planIncrementally()
 }
 
 func (w *recoveryAcceptance) changeBackgroundAndPolicy() error {
 	if err := write(w.repo, "features/behavior.feature", behaviorFeature("changed shared context", "first result")); err != nil {
 		return err
 	}
-	return write(w.repo, "workflow.yaml", incrementalSpec("Implement behavior carefully."))
+	if err := write(w.repo, "workflow.yaml", incrementalSpec("Implement behavior carefully.")); err != nil {
+		return err
+	}
+	return w.planIncrementally()
 }
 
 func (w *recoveryAcceptance) noTasksGenerated() error {
