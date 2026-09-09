@@ -1,0 +1,37 @@
+{
+  "findings": [],
+  "checked_scope": [
+    "workflow/compiler.go: specification decoding, strict field validation, feature discovery and ordering, Gherkin parsing and outline expansion, background/rule propagation, table and doc-string rendering, scenario coverage, prompt construction, task validation, and deterministic topological ordering",
+    "workflow/types.go: compiled plan and policy JSON/YAML shape",
+    "workflow/compiler_test.go and workflow/acceptance_test.go: unit and executable Gherkin acceptance coverage for compiler requirements",
+    "cmd/godog/internal/cmd_workflow.go, cmd/godog/main.go, and cmd/godog/internal/cmd_workflow_test.go: command registration, argument validation, plan JSON output, run result output, and failure propagation",
+    "docs/workflows/develop.yaml and docs/workflows/README.md: declared workflow policy and CLI contract"
+  ],
+  "test_evidence": [
+    {
+      "command": "go test ./workflow ./cmd/godog/internal -count=1",
+      "result": "pass",
+      "details": "Both targeted packages passed."
+    },
+    {
+      "command": "go test -race ./workflow ./cmd/godog/internal -count=1",
+      "result": "pass",
+      "details": "Both targeted packages passed with the race detector."
+    },
+    {
+      "command": "go vet ./workflow ./cmd/godog/internal",
+      "result": "pass",
+      "details": "No vet diagnostics."
+    },
+    {
+      "command": "temporary standalone Go adversarial probe importing github.com/cucumber/godog/workflow",
+      "result": "pass",
+      "details": "Confirmed task-level YAML merges retain explicit zero-attempt validation; merged unknown task fields are rejected; two compilations are byte identical; ready tasks are dependency-ordered deterministically; outline rows have distinct scenarios; feature and rule backgrounds, escaped tables, media-typed doc strings, and substitutions are retained; and Compile does not execute a sentinel task command. The temporary probe was removed after execution."
+    },
+    {
+      "command": "built ./cmd/godog executable exercised by temporary standalone Go probe",
+      "result": "pass",
+      "details": "Confirmed workflow plan emits parseable byte-identical JSON on repeated runs without executing the sentinel command; workflow plan without SPEC exits nonzero with an argument-usage error; and workflow run returns nonzero for a failing task while stdout remains parseable result JSON reporting failed status. Temporary binary, repositories, and fixtures were outside the worktree and removed by the probe."
+    }
+  ]
+}
