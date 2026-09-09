@@ -20,6 +20,7 @@ func TestExecuteCodexUsesExactArgvAndPreservesCaller(t *testing.T) {
 	codex := writeExecutable(t, `#!/bin/sh
 printf '%s\n' "$PWD" > "$FAKE_CODEX_RECORDS/cwd"
 printf '%s\n' "$@" > "$FAKE_CODEX_RECORDS/argv"
+[ "$5" = "--" ] || { printf 'missing option terminator\n' >&2; exit 2; }
 printf 'task output\n' > task-output.txt
 `)
 	output := filepath.Join(t.TempDir(), "run")
@@ -38,7 +39,7 @@ printf 'task output\n' > task-output.txt
 		t.Fatalf("unexpected result: %+v", result)
 	}
 	argv := strings.Split(strings.TrimSpace(readFile(t, filepath.Join(records, "argv"))), "\n")
-	wantArgv := []string{"exec", "-m", "test-model", "--dangerously-bypass-approvals-and-sandbox", prompt}
+	wantArgv := []string{"exec", "-m", "test-model", "--dangerously-bypass-approvals-and-sandbox", "--", prompt}
 	if strings.Join(argv, "\x00") != strings.Join(wantArgv, "\x00") {
 		t.Fatalf("codex argv = %#v, want %#v", argv, wantArgv)
 	}
@@ -137,7 +138,7 @@ count=0
 [ ! -f "$count_file" ] || count=$(cat "$count_file")
 count=$((count+1))
 printf '%s' "$count" > "$count_file"
-printf '%s\n' "$5" > "$FAKE_CODEX_RECORDS/prompt-$count"
+printf '%s\n' "$6" > "$FAKE_CODEX_RECORDS/prompt-$count"
 if [ "$count" -eq 1 ]; then printf 'FIRST_FAILURE\n' >&2; exit 7; fi
 printf 'recovered\n' > recovered.txt
 `)
@@ -166,6 +167,47 @@ printf 'recovered\n' > recovered.txt
 		t.Fatalf("retry prompt lacks task and failure feedback: %q", retryPrompt)
 	}
 	assertJSONFile(t, filepath.Join(filepath.Dir(byID["retry"].Worktree), "..", "result.json"))
+}
+
+func TestExecutePropagatesDependencyFailureTransitively(t *testing.T) {
+	repo := newTestRepository(t)
+	markerDir := t.TempDir()
+	t.Setenv("WORKFLOW_MARKER_DIR", markerDir)
+	plan := &Plan{Version: 1, Name: "dependency failure", Tasks: []Task{
+		{TaskSpec: TaskSpec{ID: "fail", Run: []string{"sh", "-c", "printf 'failure output\\n'; exit 23"}, Attempts: 1}},
+		{TaskSpec: TaskSpec{ID: "direct", Needs: []string{"fail"}, Run: []string{"sh", "-c", "touch \"$WORKFLOW_MARKER_DIR/direct\""}, Attempts: 1}},
+		{TaskSpec: TaskSpec{ID: "transitive", Needs: []string{"direct"}, Run: []string{"sh", "-c", "touch \"$WORKFLOW_MARKER_DIR/transitive\""}, Attempts: 1}},
+		{TaskSpec: TaskSpec{ID: "independent", Run: []string{"sh", "-c", "printf 'ok\\n' > independent.txt"}, Attempts: 1}},
+	}}
+
+	result, err := Execute(context.Background(), plan, RunOptions{
+		Dir: repo, OutputDir: filepath.Join(t.TempDir(), "run"), Jobs: 2,
+	})
+	if err == nil {
+		t.Fatal("Execute() succeeded with a failed dependency")
+	}
+	byID := taskResultsByID(result)
+	if got := byID["fail"]; got.Status != "failed" || got.Attempts != 1 || got.Worktree == "" || got.Log == "" {
+		t.Fatalf("failed task result = %+v", got)
+	}
+	for _, id := range []string{"direct", "transitive"} {
+		got := byID[id]
+		if got.Status != "blocked" || got.Attempts != 0 || got.Commit != "" {
+			t.Fatalf("dependent task %s result = %+v", id, got)
+		}
+		if _, statErr := os.Stat(filepath.Join(markerDir, id)); !os.IsNotExist(statErr) {
+			t.Fatalf("blocked task %s executed: %v", id, statErr)
+		}
+	}
+	if got := byID["independent"]; got.Status != "success" || got.Commit == "" {
+		t.Fatalf("independent task result = %+v", got)
+	}
+	if _, statErr := os.Stat(byID["fail"].Worktree); statErr != nil {
+		t.Fatalf("failed task worktree missing: %v", statErr)
+	}
+	if log := readFile(t, byID["fail"].Log); !strings.Contains(log, "failure output") {
+		t.Fatalf("failed task log lacks command output: %q", log)
+	}
 }
 
 func TestExecuteHonorsExpectedExitAndCancellation(t *testing.T) {
