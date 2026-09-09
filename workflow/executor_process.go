@@ -2,9 +2,7 @@ package workflow
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 )
 
@@ -29,15 +27,4 @@ func runTaskCommand(ctx context.Context, cmd *exec.Cmd) error {
 		<-wait
 		return ctx.Err()
 	}
-}
-
-func killSingleProcess(cmd *exec.Cmd) error {
-	if cmd.Process == nil {
-		return nil
-	}
-	err := cmd.Process.Kill()
-	if err != nil && !errors.Is(err, os.ErrProcessDone) {
-		return err
-	}
-	return nil
 }
