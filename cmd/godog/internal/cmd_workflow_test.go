@@ -3,6 +3,7 @@ package internal
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -115,6 +116,86 @@ func TestWorkflowRunCLIReportsResultAndFailure(t *testing.T) {
 			}
 			if git("status", "--porcelain") != "" {
 				t.Fatal("caller checkout modified")
+			}
+		})
+	}
+}
+
+func TestBuiltWorkflowCLIEmitsJSONAndReturnsNonzeroOnTaskFailure(t *testing.T) {
+	repoRootBytes, err := exec.Command("git", "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoRoot := strings.TrimSpace(string(repoRootBytes))
+	binary := filepath.Join(t.TempDir(), "godog")
+	build := exec.Command("go", "build", "-o", binary, "./cmd/godog")
+	build.Dir = repoRoot
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build godog: %v\n%s", err, output)
+	}
+
+	for _, test := range []struct {
+		name     string
+		run      string
+		wantFail bool
+	}{
+		{name: "success", run: "[git, status, --porcelain]"},
+		{name: "failure", run: "[git, nonexistent-godog-test-command]", wantFail: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			git := func(args ...string) {
+				cmd := exec.Command("git", args...)
+				cmd.Dir = dir
+				cmd.Env = append(os.Environ(), "GIT_CONFIG_NOSYSTEM=1", "GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.invalid", "GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.invalid")
+				if output, err := cmd.CombinedOutput(); err != nil {
+					t.Fatalf("git %v: %v\n%s", args, err, output)
+				}
+			}
+			git("init", "-q")
+			git("config", "user.name", "Test")
+			git("config", "user.email", "test@example.invalid")
+			if err := os.WriteFile(filepath.Join(dir, "sample.feature"), []byte("Feature: sample\n Scenario: one\n  Given an outcome\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			spec := filepath.Join(dir, "workflow.yaml")
+			contents := "version: 1\nname: built-cli\nfeatures: [sample.feature]\ntasks:\n - id: check\n   run: " + test.run + "\n"
+			if err := os.WriteFile(spec, []byte(contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			git("add", ".")
+			git("commit", "-q", "-m", "test: initial")
+
+			cmd := exec.Command(binary, "workflow", "run", spec, "--repo", dir, "--output-dir", filepath.Join(t.TempDir(), "run"))
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout = &stdout
+			cmd.Stderr = &stderr
+			runErr := cmd.Run()
+			if test.wantFail {
+				var exitErr *exec.ExitError
+				if !errors.As(runErr, &exitErr) || exitErr.ExitCode() == 0 {
+					t.Fatalf("failure exit = %v, stderr = %s", runErr, stderr.String())
+				}
+			} else if runErr != nil {
+				t.Fatalf("success run: %v, stderr = %s", runErr, stderr.String())
+			}
+			var result struct {
+				Tasks []struct {
+					Status string `json:"status"`
+				} `json:"tasks"`
+			}
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+				t.Fatalf("stdout is not valid JSON: %v\nstdout=%s\nstderr=%s", err, stdout.String(), stderr.String())
+			}
+			if len(result.Tasks) != 1 {
+				t.Fatalf("unexpected result: %s", stdout.String())
+			}
+			wantStatus := "success"
+			if test.wantFail {
+				wantStatus = "failed"
+			}
+			if result.Tasks[0].Status != wantStatus {
+				t.Fatalf("task status = %q, want %q", result.Tasks[0].Status, wantStatus)
 			}
 		})
 	}
