@@ -110,11 +110,17 @@ is rejected for a new run. To retry unfinished steps from its saved plan, use
 are validated and reused; an explicit resume grants unfinished tasks another
 bounded attempt budget and retains cumulative counts and earlier artifacts.
 Resume uses the immutable saved plan and requires the original clean source
-baseline. It retains completed-task checkpoints and a history of execution
+baseline and a supported saved-plan schema. Runs created before durable
+checkpoints were introduced cannot be resumed automatically. It retains completed-task checkpoints and a history of execution
 starts. Unfinished steps restart from their successful dependencies in fresh
 worktrees; earlier partial edits remain available in the original worktrees.
 A command interrupted before its success checkpoint may execute again, so
 external side effects should be idempotent.
+
+Linux, macOS, BSD and Windows use inherited operating-system locks to prevent
+a second runner from restarting while an earlier task still holds the lock.
+Other platforms use a lock file; after abrupt termination, stop the old processes
+before removing a stale lock.
 
 There is no automatic cleanup. Inspect `git worktree list` and remove retained worktrees with Git
 when they are no longer needed.
