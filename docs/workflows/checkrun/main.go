@@ -9,9 +9,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cucumber/godog/workflow"
 )
 
 const expectedPlanName = "godog-workflow-development"
@@ -27,21 +30,6 @@ var expectedNeeds = map[string][]string{
 	"reconcile":        {"review-compiler", "review-execution"},
 	"verify":           {"reconcile"},
 	"vet":              {"reconcile"},
-}
-
-type planFile struct {
-	Version int        `json:"version"`
-	Name    string     `json:"name"`
-	Tasks   []planTask `json:"tasks"`
-}
-
-type planTask struct {
-	ID         string   `json:"id"`
-	Needs      []string `json:"needs"`
-	Run        []string `json:"run"`
-	Prompt     string   `json:"prompt"`
-	Model      string   `json:"model"`
-	ExpectExit int      `json:"expected_exit"`
 }
 
 type resultFile struct {
@@ -64,6 +52,8 @@ type taskResult struct {
 
 type reviewFile struct {
 	Findings json.RawMessage `json:"findings"`
+	Scope    string          `json:"scope"`
+	Evidence string          `json:"evidence"`
 }
 
 type resolutionFile struct {
@@ -72,7 +62,11 @@ type resolutionFile struct {
 }
 
 type finding struct {
-	ID string `json:"id"`
+	ID           string `json:"id"`
+	Severity     string `json:"severity"`
+	File         string `json:"file"`
+	Description  string `json:"description"`
+	Reproduction string `json:"reproduction"`
 }
 
 type resolution struct {
@@ -98,7 +92,7 @@ func check(runDir string) error {
 	if err != nil {
 		return err
 	}
-	var plan planFile
+	var plan workflow.Plan
 	if err := readFile(filepath.Join(runDir, "plan.json"), &plan); err != nil {
 		return fmt.Errorf("plan.json: %w", err)
 	}
@@ -120,13 +114,17 @@ func check(runDir string) error {
 	if err := checkGitEvidence(runDir, result, results); err != nil {
 		return err
 	}
-	if err := checkReviews(resolvePath(runDir, result.IntegrationWorktree), result.Commit); err != nil {
+	integration := resolvePath(runDir, result.IntegrationWorktree)
+	if err := checkBaselinePlan(integration, result.Baseline, &plan); err != nil {
+		return err
+	}
+	if err := checkReviews(integration, results); err != nil {
 		return err
 	}
 	return nil
 }
 
-func checkPlan(plan planFile) error {
+func checkPlan(plan workflow.Plan) error {
 	if plan.Version != 1 || plan.Name != expectedPlanName {
 		return fmt.Errorf("plan identity is version %d name %q", plan.Version, plan.Name)
 	}
@@ -262,41 +260,80 @@ func checkGitEvidence(runDir string, result resultFile, tasks map[string]taskRes
 		if err := gitRun(integration, "merge-base", "--is-ancestor", task.Commit, result.Commit); err != nil {
 			return fmt.Errorf("final integration does not contain task %s commit %s", id, task.Commit)
 		}
+		if err := gitRun(integration, "merge-base", "--is-ancestor", result.Baseline, task.Commit); err != nil {
+			return fmt.Errorf("task %s commit does not contain baseline %s", id, result.Baseline)
+		}
+		for _, need := range expectedNeeds[id] {
+			if err := gitRun(integration, "merge-base", "--is-ancestor", tasks[need].Commit, task.Commit); err != nil {
+				return fmt.Errorf("task %s commit does not contain dependency %s commit", id, need)
+			}
+		}
 	}
-	for _, id := range []string{"acceptance", "harden"} {
-		names, err := gitOutput(tasks[id].Worktree, "diff", "--name-only", result.Baseline, tasks[id].Commit)
-		if err != nil {
-			return fmt.Errorf("inspect %s commit: %w", id, err)
+	acceptanceNames, err := changedPaths(tasks["acceptance"].Worktree, result.Baseline, tasks["acceptance"].Commit)
+	if err != nil {
+		return fmt.Errorf("inspect acceptance commit: %w", err)
+	}
+	if len(acceptanceNames) != 1 || acceptanceNames[0] != "workflow/acceptance_test.go" {
+		return fmt.Errorf("acceptance commit must change only workflow/acceptance_test.go, got %v", acceptanceNames)
+	}
+	hardenNames, err := changedPaths(tasks["harden"].Worktree, result.Baseline, tasks["harden"].Commit)
+	if err != nil {
+		return fmt.Errorf("inspect harden commit: %w", err)
+	}
+	var productionChange, testChange bool
+	for _, name := range hardenNames {
+		if !allowedHardenPath(name) {
+			return fmt.Errorf("harden commit changes path outside its ownership: %s", name)
 		}
-		var goChange, testChange bool
-		for _, name := range strings.Fields(names) {
-			goChange = goChange || strings.HasSuffix(name, ".go")
-			testChange = testChange || strings.HasSuffix(name, "_test.go")
-		}
-		if !goChange || !testChange {
-			return fmt.Errorf("%s commit lacks actual Go test changes", id)
-		}
+		test := strings.HasSuffix(name, "_test.go")
+		testChange = testChange || test
+		productionChange = productionChange || !test
+	}
+	if !productionChange || !testChange {
+		return errors.New("harden commit must contain production and test changes")
 	}
 	return nil
 }
 
-func checkReviews(integration, commit string) error {
+func checkReviews(integration string, tasks map[string]taskResult) error {
 	findings := make(map[string]bool)
-	for _, name := range []string{"compiler.json", "execution.json"} {
+	producers := []struct {
+		task string
+		name string
+	}{{"review-compiler", "compiler.json"}, {"review-execution", "execution.json"}}
+	for _, producer := range producers {
 		var review reviewFile
-		if err := readGitJSON(integration, commit, filepath.ToSlash(filepath.Join(".workflow-review", name)), &review); err != nil {
-			return fmt.Errorf("review %s: %w", name, err)
+		if err := readGitJSON(integration, tasks[producer.task].Commit, filepath.ToSlash(filepath.Join(".workflow-review", producer.name)), &review); err != nil {
+			return fmt.Errorf("review %s in producer task %s: %w", producer.name, producer.task, err)
+		}
+		if strings.TrimSpace(review.Scope) == "" {
+			return fmt.Errorf("review %s scope is missing", producer.name)
+		}
+		if strings.TrimSpace(review.Evidence) == "" {
+			return fmt.Errorf("review %s evidence is missing", producer.name)
 		}
 		var items []finding
 		if len(review.Findings) == 0 {
-			return fmt.Errorf("review %s findings field is missing", name)
+			return fmt.Errorf("review %s findings field is missing", producer.name)
 		}
 		if err := json.Unmarshal(review.Findings, &items); err != nil {
-			return fmt.Errorf("review %s findings must be an array: %w", name, err)
+			return fmt.Errorf("review %s findings must be an array: %w", producer.name, err)
 		}
 		for _, item := range items {
 			if strings.TrimSpace(item.ID) == "" {
-				return fmt.Errorf("review %s contains finding without ID", name)
+				return fmt.Errorf("review %s contains finding without ID", producer.name)
+			}
+			if strings.TrimSpace(item.Severity) == "" {
+				return fmt.Errorf("review %s finding %s lacks severity", producer.name, item.ID)
+			}
+			if strings.TrimSpace(item.File) == "" {
+				return fmt.Errorf("review %s finding %s lacks file", producer.name, item.ID)
+			}
+			if strings.TrimSpace(item.Description) == "" {
+				return fmt.Errorf("review %s finding %s lacks description", producer.name, item.ID)
+			}
+			if strings.TrimSpace(item.Reproduction) == "" {
+				return fmt.Errorf("review %s finding %s lacks reproduction", producer.name, item.ID)
 			}
 			if findings[item.ID] {
 				return fmt.Errorf("duplicate review finding %q", item.ID)
@@ -305,7 +342,7 @@ func checkReviews(integration, commit string) error {
 		}
 	}
 	var resolutionRecord resolutionFile
-	if err := readGitJSON(integration, commit, ".workflow-review/resolution.json", &resolutionRecord); err != nil {
+	if err := readGitJSON(integration, tasks["reconcile"].Commit, ".workflow-review/resolution.json", &resolutionRecord); err != nil {
 		return fmt.Errorf("resolution: %w", err)
 	}
 	unresolved, err := arrayLength(resolutionRecord.Unresolved)
@@ -344,6 +381,65 @@ func checkReviews(integration, commit string) error {
 		}
 	}
 	return nil
+}
+
+func checkBaselinePlan(repo, baseline string, recorded *workflow.Plan) error {
+	directory, err := os.MkdirTemp("", "godog-checkrun-baseline-")
+	if err != nil {
+		return fmt.Errorf("create baseline snapshot: %w", err)
+	}
+	defer os.RemoveAll(directory)
+
+	pathsText, err := gitOutput(repo, "ls-tree", "-r", "--name-only", baseline, "--", "workflow/features")
+	if err != nil {
+		return fmt.Errorf("list baseline workflow features: %w", err)
+	}
+	paths := []string{"docs/workflows/develop.yaml"}
+	for _, name := range strings.Split(pathsText, "\n") {
+		if strings.HasSuffix(name, ".feature") {
+			paths = append(paths, name)
+		}
+	}
+	for _, name := range paths {
+		contents, err := gitBytes(repo, "show", baseline+":"+name)
+		if err != nil {
+			return fmt.Errorf("read baseline %s: %w", name, err)
+		}
+		target := filepath.Join(directory, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return fmt.Errorf("create baseline snapshot path: %w", err)
+		}
+		if err := os.WriteFile(target, contents, 0o644); err != nil {
+			return fmt.Errorf("write baseline %s: %w", name, err)
+		}
+	}
+	expected, err := workflow.Compile(filepath.Join(directory, "docs", "workflows", "develop.yaml"))
+	if err != nil {
+		return fmt.Errorf("compile baseline plan: %w", err)
+	}
+	if !reflect.DeepEqual(recorded, expected) {
+		return errors.New("recorded plan does not match the full baseline plan")
+	}
+	return nil
+}
+
+func changedPaths(repo, from, to string) ([]string, error) {
+	names, err := gitOutput(repo, "diff", "--name-only", from, to)
+	if err != nil {
+		return nil, err
+	}
+	if names == "" {
+		return nil, nil
+	}
+	return strings.Split(names, "\n"), nil
+}
+
+func allowedHardenPath(name string) bool {
+	if !strings.HasSuffix(name, ".go") {
+		return false
+	}
+	base := strings.TrimPrefix(name, "workflow/")
+	return base != name && (strings.HasPrefix(base, "executor") || strings.HasPrefix(base, "process"))
 }
 
 func readGitJSON(repo, commit, path string, dst any) error {
@@ -429,6 +525,15 @@ func gitOutput(dir string, args ...string) (string, error) {
 		return "", fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+func gitBytes(dir string, args ...string) ([]byte, error) {
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return out, nil
 }
 
 func existingDir(path string) (string, error) {
