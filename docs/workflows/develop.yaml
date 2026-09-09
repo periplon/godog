@@ -1,0 +1,40 @@
+version: 1
+name: godog-workflow-development
+features:
+  - ../../workflow/features/*.feature
+model: gpt-5.6-sol
+tasks:
+  - id: acceptance
+    features:
+      - ../../workflow/features/compiler.feature
+      - ../../workflow/features/cli.feature
+      - ../../workflow/features/dogfood.feature
+    prompt: |
+      Extend this Godog implementation workflow package using the supplied Gherkin
+      requirements. Own workflow/acceptance_test.go only. Add executable Godog
+      acceptance bindings and go test integration for the compiler requirements,
+      exercising the actual Compile API. Cover deterministic generation and invalid
+      specifications plus expanded Gherkin context. Do not create fake assertions
+      or silently skip missing behavior. Write tests first, observe expected
+      failures, minimally fix your owned test harness, run go test ./workflow.
+      If production behavior is defective, report exact evidence; do not edit
+      compiler.go because another independent task owns production review fixes.
+      Do not edit the feature requirements or workflow policy. Do not push or
+      create PRs. Implement code, not merely recommendations. Record concise
+      test evidence in your final response. Use installed dependencies only.
+  - id: harden
+    features:
+      - ../../workflow/features/executor.feature
+    prompt: |
+      Review and improve the implementation workflow executor against the supplied
+      Gherkin requirements. Own workflow/executor*.go and workflow/process*.go only.
+      Find a concrete execution correctness bug or a missing edge-case acceptance
+      regression; write and run a failing regression first, then make the minimum
+      production correction and run go test ./workflow. Prioritize cancellation,
+      dependency integration, Codex argument fidelity, and truthful failure status.
+      Do not modify compiler, shared types, CLI, feature requirements, or DSL files.
+      Do not push or create PRs. Produce actual tested implementation improvements.
+      Record red/green test evidence and limitations in your final response.
+  - id: verify
+    needs: [acceptance, harden]
+    run: [go, test, -race, ./...]
