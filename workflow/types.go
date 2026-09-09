@@ -41,16 +41,17 @@ type Plan struct {
 
 // PlanTracking records the full semantic input to an incremental plan.
 type PlanTracking struct {
-	Version           int                `json:"version"`
-	Spec              string             `json:"spec"`
-	SpecPath          string             `json:"spec_path,omitempty"`
-	Baseline          string             `json:"baseline"`
-	PolicyFingerprint string             `json:"policy_fingerprint"`
-	InputFingerprint  string             `json:"input_fingerprint"`
-	BaseRecords       []string           `json:"base_records,omitempty"`
-	NoOp              bool               `json:"no_op,omitempty"`
-	Scenarios         []ScenarioTracking `json:"scenarios"`
-	Tasks             []IncrementalTask  `json:"tasks,omitempty"`
+	Version               int                `json:"version"`
+	Spec                  string             `json:"spec"`
+	SpecPath              string             `json:"spec_path,omitempty"`
+	Baseline              string             `json:"baseline"`
+	PolicyFingerprint     string             `json:"policy_fingerprint"`
+	InputFingerprint      string             `json:"input_fingerprint"`
+	ProjectionFingerprint string             `json:"projection_fingerprint"`
+	BaseRecords           []string           `json:"base_records,omitempty"`
+	NoOp                  bool               `json:"no_op,omitempty"`
+	Scenarios             []ScenarioTracking `json:"scenarios"`
+	Tasks                 []IncrementalTask  `json:"tasks,omitempty"`
 }
 
 // ScenarioTracking identifies one scenario instance independently of source lines.

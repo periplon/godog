@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	planTrackingVersion = 1
+	planTrackingVersion = 2
 	registryVersion     = 1
 )
 
@@ -114,6 +114,9 @@ func CompileIncremental(ctx context.Context, specPath, repoDir string) (*Plan, e
 	if len(changed) == 0 {
 		full.Tasks = []Task{}
 		tracking.NoOp = true
+		if err := setProjectionFingerprint(full); err != nil {
+			return nil, err
+		}
 		return full, nil
 	}
 
@@ -201,6 +204,9 @@ func CompileIncremental(ctx context.Context, specPath, repoDir string) (*Plan, e
 		incrementalTasks = append(incrementalTasks, task)
 	}
 	full.Tasks = incrementalTasks
+	if err := setProjectionFingerprint(full); err != nil {
+		return nil, err
+	}
 	return full, nil
 }
 
@@ -276,7 +282,27 @@ func CompileFull(ctx context.Context, specPath, repoDir string) (*Plan, error) {
 		}
 		full.Tracking.Tasks = append(full.Tracking.Tasks, IncrementalTask{ID: task.ID, Reason: "changed", ScenarioKeys: keys})
 	}
+	if err := setProjectionFingerprint(full); err != nil {
+		return nil, err
+	}
 	return full, nil
+}
+
+func setProjectionFingerprint(plan *Plan) error {
+	fingerprint, err := projectionFingerprint(plan)
+	if err != nil {
+		return fmt.Errorf("workflow: fingerprint executable projection: %w", err)
+	}
+	plan.Tracking.ProjectionFingerprint = fingerprint
+	return nil
+}
+
+func projectionFingerprint(plan *Plan) (string, error) {
+	return semanticHash(struct {
+		Version int    `json:"version"`
+		Name    string `json:"name"`
+		Tasks   []Task `json:"tasks"`
+	}{Version: plan.Version, Name: plan.Name, Tasks: plan.Tasks})
 }
 
 // ValidateTracking checks that incremental metadata agrees with its executable plan.
@@ -288,8 +314,12 @@ func ValidateTracking(plan *Plan) error {
 	if tracking.Version != planTrackingVersion {
 		return fmt.Errorf("workflow: unsupported tracking version %d", tracking.Version)
 	}
-	if !validSpecScope(tracking.Spec) || !validGitObjectID(tracking.Baseline) || !validSemanticHash(tracking.PolicyFingerprint) || !validSemanticHash(tracking.InputFingerprint) {
+	if !validSpecScope(tracking.Spec) || !validGitObjectID(tracking.Baseline) || !validSemanticHash(tracking.PolicyFingerprint) || !validSemanticHash(tracking.InputFingerprint) || !validSemanticHash(tracking.ProjectionFingerprint) {
 		return errors.New("workflow: invalid tracking scope or policy fingerprint")
+	}
+	wantProjection, err := projectionFingerprint(plan)
+	if err != nil || wantProjection != tracking.ProjectionFingerprint {
+		return errors.New("workflow: tracked executable projection does not match plan")
 	}
 	if strings.HasPrefix(tracking.Spec, "external:") {
 		if tracking.SpecPath == "" || "external:"+semanticStringHash(filepath.Clean(tracking.SpecPath)) != tracking.Spec {
@@ -753,16 +783,29 @@ func changedScenarioKeys(current []semanticScenario, policy string, bases []impl
 		}
 		return changed
 	}
-	previous := make(map[string]string, len(bases[0].Scenarios))
+	previous := make(map[string]ScenarioTracking, len(bases[0].Scenarios))
 	for _, scenario := range bases[0].Scenarios {
-		previous[scenario.Key] = scenario.Fingerprint
+		previous[scenario.Key] = scenario
 	}
 	for _, scenario := range current {
-		if previous[scenario.tracking.Key] != scenario.tracking.Fingerprint {
+		prior, exists := previous[scenario.tracking.Key]
+		if !exists || prior.Fingerprint != scenario.tracking.Fingerprint || !equalStrings(prior.Tasks, scenario.tracking.Tasks) {
 			changed[scenario.tracking.Key] = true
 		}
 	}
 	return changed
+}
+
+func equalStrings(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func incrementalPrompt(original string, scenarios []*semanticScenario) string {
@@ -1018,12 +1061,24 @@ func validateImplementationRecord(record implementationRecord, scope string) err
 	if record.Version != registryVersion || record.Spec != scope || !validSemanticHash(record.PolicyFingerprint) || !validGitObjectID(record.IntegrationCommit) {
 		return errors.New("incompatible metadata")
 	}
-	seen := make(map[string]bool, len(record.Scenarios))
+	seenKeys := make(map[string]bool, len(record.Scenarios))
+	seenIDs := make(map[string]bool, len(record.Scenarios))
 	for _, scenario := range record.Scenarios {
-		if !validSemanticHash(scenario.Key) || !validSemanticHash(scenario.Fingerprint) || strings.TrimSpace(scenario.ID) == "" || seen[scenario.Key] {
+		if !validSemanticHash(scenario.Key) || !validSemanticHash(scenario.Fingerprint) || strings.TrimSpace(scenario.ID) == "" || seenKeys[scenario.Key] || seenIDs[scenario.ID] {
 			return errors.New("invalid scenario metadata")
 		}
-		seen[scenario.Key] = true
+		seenTasks := make(map[string]bool, len(scenario.Tasks))
+		for _, taskID := range scenario.Tasks {
+			if strings.TrimSpace(taskID) == "" || !isSafePathComponent(taskID) || seenTasks[taskID] {
+				return errors.New("invalid scenario metadata")
+			}
+			seenTasks[taskID] = true
+		}
+		if len(seenTasks) == 0 {
+			return errors.New("invalid scenario metadata")
+		}
+		seenKeys[scenario.Key] = true
+		seenIDs[scenario.ID] = true
 	}
 	return nil
 }

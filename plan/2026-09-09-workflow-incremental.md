@@ -11,6 +11,7 @@ Compile only changed or new Gherkin scenario instances using a durable, content-
 3. Implement incremental compilation and immutable record publication under the Git common directory.
 4. Run focused, race, full repository, and historical-output checks; review registry and semantic matching independently.
 5. Ensure tracked full compilation never reads implementation history and verification descendants retain every prerequisite branch.
+6. Bind tracked plans to their exact executable projection and reject malformed or assignment-incompatible registry scenarios.
 
 ## Boundaries
 

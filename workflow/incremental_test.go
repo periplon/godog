@@ -183,6 +183,35 @@ func TestValidatePlanInputsDetectsSourceAndBaselineDrift(t *testing.T) {
 	}
 }
 
+func TestValidatePlanInputsRejectsExecutableProjectionMutation(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*Plan)
+	}{
+		{name: "plan version", mutate: func(plan *Plan) { plan.Version++ }},
+		{name: "plan name", mutate: func(plan *Plan) { plan.Name += "-changed" }},
+		{name: "run", mutate: func(plan *Plan) { findTaskPointer(t, plan, "prepare").Run[0] = "false" }},
+		{name: "prompt", mutate: func(plan *Plan) { findTaskPointer(t, plan, "implement").Prompt += " Changed." }},
+		{name: "needs", mutate: func(plan *Plan) { findTaskPointer(t, plan, "verify").Needs = nil }},
+		{name: "attempts", mutate: func(plan *Plan) { findTaskPointer(t, plan, "implement").Attempts++ }},
+		{name: "model", mutate: func(plan *Plan) { findTaskPointer(t, plan, "implement").Model = "changed-model" }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo, spec := newIncrementalFixture(t)
+			plan, err := CompileFull(context.Background(), spec, repo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tt.mutate(plan)
+			if err := ValidatePlanInputs(context.Background(), plan, repo); err == nil || !strings.Contains(err.Error(), "projection") {
+				t.Fatalf("ValidatePlanInputs() error = %v, want projection mutation rejection", err)
+			}
+		})
+	}
+}
+
 func TestImplementationRegistryRejectsUntrustedResultsAndCorruption(t *testing.T) {
 	t.Run("failed execution", func(t *testing.T) {
 		repo, spec := newIncrementalFixture(t)
@@ -231,6 +260,52 @@ func TestImplementationRegistryRejectsUntrustedResultsAndCorruption(t *testing.T
 		}
 		if _, err := CompileIncremental(context.Background(), spec, repo); err == nil || !strings.Contains(err.Error(), "corrupt implementation record") {
 			t.Fatalf("CompileIncremental() error = %v, want corrupt-state rejection", err)
+		}
+	})
+
+	t.Run("malformed scenario metadata", func(t *testing.T) {
+		tests := []struct {
+			name   string
+			mutate func(*implementationRecord)
+		}{
+			{name: "empty task assignments", mutate: func(record *implementationRecord) { record.Scenarios[0].Tasks = nil }},
+			{name: "empty task ID", mutate: func(record *implementationRecord) { record.Scenarios[0].Tasks = []string{""} }},
+			{name: "duplicate task assignments", mutate: func(record *implementationRecord) {
+				record.Scenarios[0].Tasks = append(record.Scenarios[0].Tasks, record.Scenarios[0].Tasks[0])
+			}},
+			{name: "unsafe task assignment", mutate: func(record *implementationRecord) { record.Scenarios[0].Tasks = []string{"../task"} }},
+			{name: "duplicate scenario IDs", mutate: func(record *implementationRecord) { record.Scenarios[1].ID = record.Scenarios[0].ID }},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				repo, spec := newIncrementalFixture(t)
+				plan := mustCompileIncremental(t, spec, repo)
+				recordSuccessfulImplementation(t, plan, repo)
+				rewriteOnlyImplementationRecord(t, repo, tt.mutate)
+				if _, err := CompileIncremental(context.Background(), spec, repo); err == nil || !strings.Contains(err.Error(), "invalid scenario metadata") {
+					t.Fatalf("CompileIncremental() error = %v, want corrupt scenario metadata rejection", err)
+				}
+			})
+		}
+	})
+
+	t.Run("changed task assignment is not reused", func(t *testing.T) {
+		repo, spec := newIncrementalFixture(t)
+		baseline := mustCompileIncremental(t, spec, repo)
+		recordSuccessfulImplementation(t, baseline, repo)
+		targetID := findTask(t, baseline, "implement").Scenarios[0].ID
+		rewriteOnlyImplementationRecord(t, repo, func(record *implementationRecord) {
+			for i := range record.Scenarios {
+				if record.Scenarios[i].ID == targetID {
+					record.Scenarios[i].Tasks = []string{"unknown"}
+					return
+				}
+			}
+			t.Fatal("implementation scenario missing from record")
+		})
+		changed := mustCompileIncremental(t, spec, repo)
+		if got := scenarioNames(findTask(t, changed, "implement").Scenarios); !reflect.DeepEqual(got, []string{"Existing behavior"}) {
+			t.Fatalf("targets = %v, want scenario with changed task assignment", got)
 		}
 	})
 }
@@ -512,6 +587,42 @@ func findTask(t *testing.T, plan *Plan, id string) Task {
 	}
 	t.Fatalf("task %q not found", id)
 	return Task{}
+}
+
+func findTaskPointer(t *testing.T, plan *Plan, id string) *Task {
+	t.Helper()
+	for i := range plan.Tasks {
+		if plan.Tasks[i].ID == id {
+			return &plan.Tasks[i]
+		}
+	}
+	t.Fatalf("task %q not found", id)
+	return nil
+}
+
+func rewriteOnlyImplementationRecord(t *testing.T, repo string, mutate func(*implementationRecord)) {
+	t.Helper()
+	records := testRecordFiles(t, repo)
+	if len(records) != 1 {
+		t.Fatalf("registry entries = %d, want one", len(records))
+	}
+	var record implementationRecord
+	if err := json.Unmarshal([]byte(readFile(t, records[0])), &record); err != nil {
+		t.Fatal(err)
+	}
+	mutate(&record)
+	content, err := json.MarshalIndent(record, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	content = append(content, '\n')
+	if err := os.Remove(records[0]); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(filepath.Dir(records[0]), semanticBytesHash(content)+".json")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func testGitCommonDir(t *testing.T, repo string) string {
