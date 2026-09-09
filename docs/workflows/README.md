@@ -14,8 +14,8 @@ identifies the integration worktree and commit; review that checkout before
 merging it into your branch. The source checkout is left at its original commit.
 
 Codex tasks execute with **approvals and sandbox disabled**. Git worktrees isolate
-concurrent file edits, not machine access. Use workflow files and commands you
-trust. Codex must be installed and authenticated; deterministic tasks only need
+concurrent file edits, not machine access. Linked worktrees also share Git refs
+and repository configuration. Use workflow files and commands you trust. Codex must be installed and authenticated; deterministic tasks only need
 the executables declared by the workflow.
 
 ## Workflow DSL version 1
@@ -88,6 +88,9 @@ let the runner allocate a temporary directory. Reusing an existing run directory
 is rejected. Runs preserve evidence and worktrees; there is no automatic resume
 or cleanup. Inspect `git worktree list` and remove retained worktrees with Git
 when they are no longer needed.
+
+Process-group cancellation is implemented on Unix platforms, including macOS and
+Linux. On other platforms the runner can terminate the immediate process only.
 
 `--repo` defaults to the current directory. `--codex` selects the executable for
 the Codex adapter. Interrupting a run cancels its tasks and returns failure.
