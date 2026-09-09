@@ -28,6 +28,10 @@ tasks:
     prompt: |
       Review and improve the implementation workflow executor against the supplied
       Gherkin requirements. Own workflow/executor*.go and workflow/process*.go only.
+      First fix a confirmed adapter defect: the installed Codex CLI rejects a
+      prompt beginning with a dash unless a -- option terminator precedes it.
+      Add and run a failing regression for literal leading-dash prompts, then
+      minimally fix argv construction and update affected exact-argv fixtures.
       Add regression coverage for process-tree cancellation and dependency failure
       propagation. Write tests first, run them, and fix production defects only
       when the new tests expose them; run go test ./workflow. Prioritize cancellation,
