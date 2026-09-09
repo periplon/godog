@@ -493,7 +493,7 @@ func runAttempt(ctx context.Context, worktree, logPath string, task Task, codexB
 	tail := &tailBuffer{limit: retryFeedbackLimit}
 	var cmd *exec.Cmd
 	if len(task.Run) == 0 {
-		cmd = exec.Command(codexBinary, "exec", "-m", task.Model, "--dangerously-bypass-approvals-and-sandbox", prompt)
+		cmd = exec.Command(codexBinary, "exec", "-m", task.Model, "--dangerously-bypass-approvals-and-sandbox", "--", prompt)
 	} else {
 		cmd = exec.Command(task.Run[0], task.Run[1:]...)
 	}
