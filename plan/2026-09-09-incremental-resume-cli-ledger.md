@@ -1,0 +1,21 @@
+# Execution ledger
+
+- Added scope: semantic feature/scenario tracking and durable execution restart.
+- Existing source remains frozen for the active logging repair workflow; work isolated here.
+- Native Windows workflow passed. Broader hosted CI found platform-inappropriate unused helper (U1000); move helper into its fallback platform file without behavior change, verify coverage/builds.
+- TDD pending: incremental CLI and resume acceptance.
+- CLI contract regression failed as expected: plan lacks --repo/--full. End-to-end regressions against baseline failed on unknown --repo and missing resume command before CLI edits. Tests now await the new library APIs for green verification.
+- Added six incremental and five recovery Gherkin scenarios; dedicated executable acceptance bindings are in progress in another worktree.
+- Logging source freeze ended after successful run; source remains separate from this CLI branch.
+- Executor integration red: tracked plans compiled against an old HEAD or transient feature edits still executed after source drift. Added execution-time ValidatePlanInputs before artifact creation; both regression cases pass.
+- No-op execution red: explicit tracked no-op failed with `plan must contain at least one task`. Validated tracking now permits only the explicit no-op form; it writes a normal result without executing tasks. Focused regression passes.
+- Built-binary CLI regression now reaches actual behavior: a successful full run did not seed implementation history, so the next default plan returned one task instead of zero. Connected automatic record publication after persisted successful Execute/Resume results; failed and no-op runs do not publish new implementation records.
+- Resume now validates tracked source inputs before changing the saved execution.
+- Green built-binary CLI checks: initial --full run records implementation, default planning/run become no-op, no-op resume succeeds, inserting a scenario selects only that scenario, failed-step resume preserves successful-step side-effect count, and resuming the completed execution repeats no task. Focused package checks passed in 2.7s.
+- CLI plan remains stateless with --full; run --full uses tracked CompileFull. Windows CI now runs the same built-binary incremental and recovery checks.
+- Integrated full `go test -race -cover ./...` passed, including all 11 Gherkin recovery scenarios and built-binary CLI checks. Staticcheck identified two unused test helpers; removed them (no behavior change), then staticcheck passed.
+- Real gpt-5.6-sol smoke: implementation task succeeded; intentionally gated verification failed. Resume retained the implementation TaskResult byte-for-byte, retried verification to cumulative attempt 2, and recorded failed/successful execution history. Unmerged implementation remained selectable; merging produced a no-op plan and no-op execution. Inserting Beta before Alpha selected only Beta for the next live run. Retained evidence under godog-runs/incremental-resume-smoke.
+- Final tracking schema v2 binds the exact executable projection. Independent re-review reproduced the original altered-action and malformed-registry probes against the fixed commit; both now reject invalid evidence. No additional actionable finding remains in the scoped review.
+- Final code verification at 10f19c3: full `go test -race -cover ./...`, `go vet ./...`, staticcheck, independent original self-host evidence checker, and built legacy CLI strict acceptance (110 scenarios / 425 steps) all passed.
+- The final binary reused the real Alpha/Beta implementation records, produced a tracked-v2 no-op plan, and successfully executed/resumed that no-op. Exact Alpha/Beta bytes and unchanged source before explicit merges were checked. Original and resumed task artifacts are retained.
+- Delivery remains draft PR #1; no merge or release was performed. PR checks are authoritative for the final pushed head. Earlier bootstrap/qualification worktrees and runs remain for inspection.

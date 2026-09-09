@@ -1,0 +1,31 @@
+version: 1
+name: godog-workflow-log-repair
+features: [../../workflow/features/executor.feature]
+model: gpt-5.6-sol
+tasks:
+  - id: fix-logging
+    prompt: |
+      Fix confirmed task-log I/O failure handling in the workflow executor.
+      Own workflow/executor*.go and workflow/process*.go only. Do not change
+      requirements, workflow specifications, review artifacts, or unrelated code.
+      A regression reproduced the bug by setting RLIMIT_FSIZE to zero in a macOS test process and calls runAttempt with
+      an existing empty log and /usr/bin/true. The current code reports success
+      despite fmt.Fprintf failing to write the log header. This was reproduced by
+      go test ./workflow -run TestProbeLogWriteFailure -count=1.
+      Add robust regression tests to this worktree first and observe the expected
+      failure. Prefer an isolated subprocess for resource-limit fault injection.
+      Also cover log/output write failure when the child exits with the task's
+      expected nonzero code: a matching child exit must never hide an I/O error.
+      Audit ignored appendLog and log close/write errors so operational failures
+      are propagated truthfully before further dependent work. Preserve cancellation,
+      bounded feedback, exact Codex argv, successful expected-exit behavior, and
+      normal worktree integration. Make the minimum implementation fixes.
+      Run focused tests, go test -race ./workflow, and go vet ./workflow.
+      Do not commit, push, or create PRs; the runner owns commits. Do not add
+      attribution. Report exact red/green evidence and remaining limitations.
+  - id: verify
+    needs: [fix-logging]
+    run: [go, test, -race, ./...]
+  - id: vet
+    needs: [fix-logging]
+    run: [go, vet, ./...]

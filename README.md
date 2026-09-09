@@ -582,3 +582,10 @@ A simple example can be [found here](/_examples/custom-formatter).
 
 
 
+
+## Implementation workflows (Periplon extension)
+
+Generate and execute implementation workflows from Gherkin and a versioned YAML
+policy, using Codex for judgment tasks and Git worktrees for parallel execution.
+See the [workflow quickstart and DSL reference](docs/workflows/README.md).
+

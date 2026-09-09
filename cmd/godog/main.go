@@ -13,10 +13,11 @@ func main() {
 	runCmd := internal.CreateRunCmd()
 	versionCmd := internal.CreateVersionCmd()
 
-	rootCmd.AddCommand(&buildCmd, &runCmd, &versionCmd)
+	workflowCmd := internal.CreateWorkflowCmd()
+	rootCmd.AddCommand(&buildCmd, &runCmd, &versionCmd, workflowCmd)
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
 }

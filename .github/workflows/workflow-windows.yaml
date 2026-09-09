@@ -1,0 +1,22 @@
+name: Windows workflow runtime
+on:
+  pull_request:
+  push:
+    branches: [main, 'jmca/**']
+permissions:
+  contents: read
+jobs:
+  workflow-windows:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
+        with:
+          go-version: stable
+      - name: Verify compiler and native process-tree cancellation
+        run: go test -count=1 ./workflow -run '^(TestCompile.*|TestCompilerAcceptance|TestWindowsTaskkillCommandTargetsProcessTree|TestRunTaskCommandCancelsNestedProcessTreeWindows)$'
+      - name: Verify incremental planning and execution restart through CLI
+        run: go test -count=1 ./cmd/godog/internal -run '^TestWorkflowCLI(IncrementalDefaultAndFullOverride|ResumeRetriesOnlyUnfinishedSteps)$'
+      - name: Build workflow CLI
+        run: go build ./cmd/godog

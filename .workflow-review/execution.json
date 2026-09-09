@@ -1,0 +1,60 @@
+{
+  "findings": [
+    {
+      "id": "EXEC-001",
+      "severity": "medium",
+      "file": "workflow/executor.go",
+      "description": "A task whose timeout or caller cancellation expires before `git worktree add` completes returns a `TaskResult` containing `worktree` and `log` paths even though neither artifact is guaranteed to exist. The log is created only after worktree creation succeeds, and the failed worktree creation output is stored only in `error`. This violates the failure-inspection requirement and makes the persisted artifact references misleading.",
+      "reproduction": "Execute a valid one-task plan with `Timeout: \"1ns\"` and an external new `OutputDir`. After Execute returns failure, inspect `result.Tasks[0].Worktree` and `result.Tasks[0].Log`: `runTaskCommand` observes the already-expired context before starting `git worktree add`, while `appendLog` is never reached, so both reported paths are absent. The same path is reachable when the caller context is cancelled during worktree setup."
+    },
+    {
+      "id": "EXEC-002",
+      "severity": "medium",
+      "file": "workflow/executor.go",
+      "description": "Every failure from the integration `git merge` is reported as an `integration conflict`, including context cancellation, timeout, hook failure, I/O failure, and invalid Git state. This makes cancellation and operational failures indistinguishable from actual content conflicts and is not truthful failure reporting.",
+      "reproduction": "Configure an external `pre-merge-commit` hook that blocks only when `$PWD` is the run's `integration` worktree. Run a one-task plan that creates a commit, wait until the integration hook starts, then cancel the Execute context. The merge is killed and returns `context canceled`, but Execute returns `workflow: integration conflict for task ...: context canceled` even though the task edits have no conflicting paths."
+    },
+    {
+      "id": "EXEC-003",
+      "severity": "medium",
+      "file": "workflow/executor_process_other.go",
+      "description": "On non-Unix targets such as Windows, cancellation kills only the direct task process. A task that launches descendants can therefore continue executing after the workflow has returned cancellation, contrary to the requirement that execution stops. The Unix implementation correctly uses a process group, but the fallback has no equivalent tree termination.",
+      "reproduction": "On Windows, run a command task whose parent process starts a child that waits briefly and writes a marker, then waits. Cancel the workflow after the child starts. `terminateTaskCommand` calls only `cmd.Process.Kill()`; after Execute returns failure, the child remains alive and writes the marker. The existing nested-process cancellation regression is Unix-build-tagged and therefore does not cover this path."
+    }
+  ],
+  "checked_scope": [
+    "Worktree creation, task isolation, source checkout cleanliness checks, and integration worktree construction",
+    "Exact Codex argv construction, model selection, YOLO flag, option terminator, literal prompt transport, and retry feedback bounding",
+    "DAG scheduling, concurrent ready tasks, dependency merge provenance, transitive blocking, and integration conflict preservation",
+    "Expected nonzero exits, task timeouts, caller cancellation, process-tree termination, terminal status reporting, and retry attempt accounting",
+    "Plan/result/log artifact creation and persistence, failure-path artifact references, and CLI JSON emission on success and failure",
+    "Cross-platform process implementation by static inspection and Windows cross-compilation"
+  ],
+  "test_evidence": [
+    {
+      "command": "go test ./...",
+      "result": "pass",
+      "details": "All repository packages passed, including workflow and CLI tests."
+    },
+    {
+      "command": "go test -race ./workflow/...",
+      "result": "pass",
+      "details": "Workflow package passed under the race detector."
+    },
+    {
+      "command": "go vet ./workflow/... ./cmd/godog/internal/...",
+      "result": "pass",
+      "details": "No vet diagnostics."
+    },
+    {
+      "command": "GOOS=windows GOARCH=amd64 go test -c ./workflow -o /tmp/workflow-windows.test.exe",
+      "result": "pass",
+      "details": "Windows code path cross-compiled; Windows runtime cancellation could not be executed on the macOS review host."
+    },
+    {
+      "command": "go test -race -count=20 ./workflow -run 'TestExecute(RunsReadyTasksConcurrentlyAndMergesDependencies|HonorsExpectedExitAndCancellation|TaskTimeoutIsFailureNotCallerCancellation|PreservesIntegrationConflict|PropagatesDependencyFailureTransitively)|TestRunTaskCommandCancelsNestedProcessTree'",
+      "result": "pass",
+      "details": "Twenty adversarial repetitions passed for parallel worktrees, dependency integration, transitive failure blocking, expected exits, cancellation, timeout, conflict retention, and Unix descendant termination."
+    }
+  ]
+}

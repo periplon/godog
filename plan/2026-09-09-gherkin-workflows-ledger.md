@@ -1,0 +1,32 @@
+# Work ledger
+
+- 2026-09-09: Fork verified, cloned to software-factory/godog. Baseline inspected; Go 1.18 module, Cobra CLI, Gherkin v42, YAML v3 already available.
+- Installed Codex CLI confirms noninteractive `exec`, `-m`, prompt argument, and `--dangerously-bypass-approvals-and-sandbox` support.
+- Architecture review assigned independently. Bootstrap compiler, executor, CLI, and acceptance implementation pending.
+- Baseline `go test ./...` passed before behavioral changes.
+- CLI TDD red: `go test ./cmd/godog/internal` failed because CreateWorkflowCmd did not exist. Implemented plan/run commands; green awaits compiler/executor integration.
+- Architecture reviewer identified explicit expected-exit and timeout requirements for TDD workflows; added shared DSL fields and assigned validation/runtime semantics to owners.
+- Added source Gherkin requirements and self-hosted workflow policy. Real self-hosted run pending bootstrap.
+- Live Codex probe succeeded with `gpt-5.6-sol`, approval=never and sandbox=danger-full-access; exact CLI adapter invocation is usable with current authentication.
+- Independent self-host specification review found missing compiler/CLI repair ownership and outer-run verification recursion. Expanded DSL with two independent reviewers, a dependent reconciliation task, test and vet gates. Outer self-host evidence will be checked after the run rather than recursively bound inside it.
+- Tested the actual seven-task development DSL against the in-progress compiler twice: identical JSON plans, 24 unique requirement scenarios, expected parallel roots and review/reconciliation dependencies. Compiler and CLI tests still require integrated execution before claiming overall completion.
+- Root compiler review found YAML merge keys bypassed explicit-zero attempt validation. Regression failed with `got <nil>` as expected; decoding presence through resolved mappings fixed the cause. `go test -race ./workflow` passed after the fix.
+- Integrated compiler, executor, and self-host evidence checker. First integrated race suite exposed Cobra value-copy output inheritance and usage-text contamination of JSON; CLI regression tests caught both. Returning a command pointer and silencing leaf-command usage fixed them; focused CLI race tests passed.
+- Bootstrap integrated race suite passed after the CLI fix; built-binary smoke verified exit 1, parseable JSON failure result, and unchanged caller checkout. `go vet ./...` passed.
+- Live Codex parsing probe reproduced an adapter defect: a leading-dash prompt is treated as an option and exits 2, with CLI advice to use `--`. Assigned this concrete production fix, regression-first, to the self-hosted harden task so the new runner generates a real implementation correction from its own workflow specification. This remains a known defect until the generated correction and independent review pass.
+- First real self-host run completed successfully at integration commit d95b110f45c156d5a113ce3df5ce4347f1c80636. All seven tasks ran once; initial implementation tasks overlapped in distinct worktrees. Root remained clean at baseline 04a1b970ac31d4a7ad20c0d3743436f09ae339ff until explicit integration.
+- Generated acceptance commit 04ab88c executes 12 compiler scenarios / 39 steps. Generated hardening commit e744b81 fixes actual Codex leading-dash prompts and adds descendant-cancellation/transitive-blocking regressions. Generated reconciliation commit 7e50db6 fixes setup artifact references, cancellation/conflict classification, and adds Windows tree termination plus a subprocess CLI regression. Both independent reviews and their resolutions are retained under .workflow-review.
+- Rebuilt adapter passed a real gpt-5.6-sol leading-dash prompt smoke: exact READY newline artifact, success result, and unchanged source repository. Artifacts: ../godog-runs/adapter-smoke.
+- Bootstrap compatibility validation: upstream strict Godog passed 110 scenarios / 425 steps; examples race tests and vet passed (DB example has no runnable tests).
+- Stronger checkrun review added full baseline-plan comparison and dependency/producer provenance checks. Its first real run exposed an over-narrow field naming assumption (scope/evidence strings versus legitimate checked_scope/test_evidence arrays); correction pending in isolated evidence-fix branch.
+- Separate fault injection in the compatibility worktree confirmed ignored task-log header write failure. Prepared logging-repair.yaml for another real self-hosted correction, with deterministic race/vet gates. Added native Windows CI because cross-compilation alone does not verify the generated Windows cancellation behavior.
+
+## Completed live qualification and expanded scope
+
+- Real selfhost-01 completed all seven tasks at integration d95b110f45c156d5a113ce3df5ce4347f1c80636. Independent evidence checker now accepts the actual structured review schema and reports `self-host evidence verified`; original artifacts were not edited.
+- Real leading-dash Codex adapter smoke produced exact READY newline artifact with gpt-5.6-sol and the -- argument separator; source stayed unchanged.
+- Real selfhost-02-logging completed fix-logging, verify (full race suite), and vet at be19ac21ef57bbdfef46719e140e9a9b6b4e16f2. Generated regressions reproduced header/output persistence failures first; generated implementation propagates them. Independent review found no actionable production defect. Physical log failure injection is Unix-specific.
+- Native Windows hosted task cancellation checks passed. Linux CI staticcheck exposed an unused fallback helper; moved it into a non-Unix file and local staticcheck passes. Updated hosted checks pending.
+- Existing strict Godog acceptance: 110 scenarios, 425 steps passed. Examples race tests/vet passed. Built CLI failure smoke emitted valid JSON and a nonzero exit.
+- User added incremental feature/scenario implementation records and resumable executions. Separate compiler, executor, and CLI worktrees now implement this with regression-first evidence. Completion audit remains open for this expanded scope.
+- Hosted coverage run exposed a test-fixture cleanup omission: subprocess RLIMIT_FSIZE remained low when Go wrote coverage metadata. Reproduced locally with `go test -cover ./workflow -run '^TestProbeLogWriteFailure$' -count=1`; both cases failed after PASS with file-too-large coverage errors. Restored original limit in test cleanup; identical check now passes. This changes fixture cleanup, not the injected failure assertions or production behavior.
