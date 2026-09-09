@@ -414,7 +414,7 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 	worktree := filepath.Join(output, "worktrees", fmt.Sprintf("%03d-%s", index+1, safeName(task.ID)))
 	logPath := filepath.Join(output, "logs", fmt.Sprintf("%03d-%s.log", index+1, safeName(task.ID)))
 	if err := appendLog(logPath, []byte("create worktree: "+worktree+"\n")); err != nil {
-		return finishTask(result, "failed", fmt.Errorf("open task log: %w", err))
+		return finishTask(result, "failed", fmt.Errorf("initialize task log: %w", err))
 	}
 	result.Log = logPath
 	update(result)
@@ -423,7 +423,9 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	if outputBytes, err := commandOutput(ctx, repo, "git", "worktree", "add", "--detach", worktree, baseline); err != nil {
-		appendLog(logPath, append(outputBytes, []byte("create worktree failed: "+err.Error()+"\n")...))
+		if logErr := appendLog(logPath, append(outputBytes, []byte("create worktree failed: "+err.Error()+"\n")...)); logErr != nil {
+			return finishTask(result, "failed", fmt.Errorf("create worktree: %w (append task log: %v)", err, logErr))
+		}
 		return finishTask(result, "failed", fmt.Errorf("create worktree: %w: %s", err, strings.TrimSpace(string(outputBytes))))
 	}
 	result.Worktree = worktree
@@ -435,7 +437,12 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 		dependency := snapshotTaskResult(aggregate, indices[need])
 		message := "chore(workflow): integrate dependency " + need
 		outputBytes, err := commandOutput(ctx, worktree, "git", "merge", "--no-ff", "--no-gpg-sign", "-m", message, dependency.Commit)
-		appendLog(logPath, outputBytes)
+		if logErr := appendLog(logPath, outputBytes); logErr != nil {
+			if err != nil {
+				return finishTask(result, statusForParent(parent), fmt.Errorf("merge dependency %q: %w (append task log: %v)", need, err, logErr))
+			}
+			return finishTask(result, "failed", fmt.Errorf("append task log after merging dependency %q: %w", need, logErr))
+		}
 		if err != nil {
 			return finishTask(result, statusForParent(parent), fmt.Errorf("merge dependency %q: %w", need, err))
 		}
@@ -457,7 +464,7 @@ func executeTask(parent context.Context, repo, baseline, output string, index in
 		if err := ctx.Err(); err != nil {
 			return finishTask(result, statusForParent(parent), err)
 		}
-		if exitCode == task.ExpectExit && (runErr == nil || exitCode >= 0) {
+		if attemptExitMatches(task.ExpectExit, exitCode, runErr) {
 			commit, commitErr := commitTask(ctx, worktree, task.ID, setupHead, logPath)
 			if commitErr != nil {
 				return finishTask(result, statusForParent(parent), commitErr)
@@ -488,10 +495,15 @@ func snapshotTaskResult(result *Result, index int) TaskResult {
 func runAttempt(ctx context.Context, worktree, logPath string, task Task, codexBinary, prompt string, attempt int) (string, int, error) {
 	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
-		return "", -1, err
+		return "", -1, fmt.Errorf("open task log: %w", err)
 	}
-	defer logFile.Close()
-	fmt.Fprintf(logFile, "\n=== attempt %d ===\n", attempt)
+	if _, err := fmt.Fprintf(logFile, "\n=== attempt %d ===\n", attempt); err != nil {
+		closeErr := logFile.Close()
+		if closeErr != nil {
+			return "", -1, fmt.Errorf("write task log header: %w (close task log: %v)", err, closeErr)
+		}
+		return "", -1, fmt.Errorf("write task log header: %w", err)
+	}
 	tail := &tailBuffer{limit: retryFeedbackLimit}
 	var cmd *exec.Cmd
 	if len(task.Run) == 0 {
@@ -500,27 +512,45 @@ func runAttempt(ctx context.Context, worktree, logPath string, task Task, codexB
 		cmd = exec.Command(task.Run[0], task.Run[1:]...)
 	}
 	cmd.Dir = worktree
-	combined := io.MultiWriter(logFile, tail)
+	logOutput := &errorRecordingWriter{writer: logFile}
+	combined := io.MultiWriter(logOutput, tail)
 	cmd.Stdout = combined
 	cmd.Stderr = combined
-	err = runTaskCommand(ctx, cmd)
-	return tail.String(), commandExitCode(err), err
+	runErr := runTaskCommand(ctx, cmd)
+	exitCode := commandExitCode(runErr)
+	closeErr := logFile.Close()
+	if logOutput.err != nil {
+		if closeErr != nil {
+			return tail.String(), exitCode, fmt.Errorf("write task log output: %w (close task log: %v)", logOutput.err, closeErr)
+		}
+		return tail.String(), exitCode, fmt.Errorf("write task log output: %w", logOutput.err)
+	}
+	if closeErr != nil {
+		return tail.String(), exitCode, fmt.Errorf("close task log: %w", closeErr)
+	}
+	return tail.String(), exitCode, runErr
 }
 
 func commitTask(ctx context.Context, worktree, taskID, setupHead, logPath string) (string, error) {
 	if output, err := commandOutput(ctx, worktree, "git", "add", "--all"); err != nil {
-		appendLog(logPath, output)
+		if logErr := appendLog(logPath, output); logErr != nil {
+			return "", fmt.Errorf("stage task changes: %w (append task log: %v)", err, logErr)
+		}
 		return "", fmt.Errorf("stage task changes: %w", err)
 	}
 	staged, err := commandOutput(ctx, worktree, "git", "diff", "--cached", "--quiet")
 	if err != nil {
 		if commandExitCode(err) != 1 {
-			appendLog(logPath, staged)
+			if logErr := appendLog(logPath, staged); logErr != nil {
+				return "", fmt.Errorf("inspect staged task changes: %w (append task log: %v)", err, logErr)
+			}
 			return "", fmt.Errorf("inspect staged task changes: %w", err)
 		}
 		message := "chore(workflow): complete task " + taskID
 		if output, commitErr := commandOutput(ctx, worktree, "git", "commit", "--no-gpg-sign", "-m", message); commitErr != nil {
-			appendLog(logPath, output)
+			if logErr := appendLog(logPath, output); logErr != nil {
+				return "", fmt.Errorf("commit task changes: %w (append task log: %v)", commitErr, logErr)
+			}
 			return "", fmt.Errorf("commit task changes: %w", commitErr)
 		}
 	}
@@ -530,7 +560,9 @@ func commitTask(ctx context.Context, worktree, taskID, setupHead, logPath string
 	}
 	head := strings.TrimSpace(string(headBytes))
 	if output, ancestorErr := commandOutput(ctx, worktree, "git", "merge-base", "--is-ancestor", setupHead, head); ancestorErr != nil {
-		appendLog(logPath, output)
+		if logErr := appendLog(logPath, output); logErr != nil {
+			return "", fmt.Errorf("task rewrote history and discarded its baseline or dependencies (append task log: %v)", logErr)
+		}
 		return "", errors.New("task rewrote history and discarded its baseline or dependencies")
 	}
 	return head, nil
@@ -617,6 +649,17 @@ func commandExitCode(err error) int {
 	return -1
 }
 
+func attemptExitMatches(expected, actual int, err error) bool {
+	if actual != expected {
+		return false
+	}
+	if err == nil {
+		return true
+	}
+	var exitErr *exec.ExitError
+	return errors.As(err, &exitErr) && exitErr.ExitCode() == actual
+}
+
 func commandOutput(ctx context.Context, dir, name string, args ...string) ([]byte, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = dir
@@ -685,9 +728,30 @@ func appendLog(path string, contents []byte) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
-	_, err = file.Write(contents)
-	return err
+	if _, err := file.Write(contents); err != nil {
+		closeErr := file.Close()
+		if closeErr != nil {
+			return fmt.Errorf("write: %w (close: %v)", err, closeErr)
+		}
+		return err
+	}
+	return file.Close()
+}
+
+type errorRecordingWriter struct {
+	writer io.Writer
+	err    error
+}
+
+func (writer *errorRecordingWriter) Write(contents []byte) (int, error) {
+	written, err := writer.writer.Write(contents)
+	if err == nil && written != len(contents) {
+		err = io.ErrShortWrite
+	}
+	if err != nil && writer.err == nil {
+		writer.err = err
+	}
+	return written, err
 }
 
 func timestamp(value time.Time) string {
