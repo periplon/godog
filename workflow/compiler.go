@@ -109,7 +109,8 @@ func compileFeatures(specDir string, selectors []string) ([]compiledFeature, err
 		if filepath.IsAbs(selector) {
 			return nil, fmt.Errorf("workflow feature glob %q must be relative to the spec", selector)
 		}
-		matches, err := filepath.Glob(filepath.Join(specDir, filepath.FromSlash(selector)))
+		// The base directory is literal; only the selector is a glob.
+		matches, err := filepath.Glob(filepath.Join(literalFeatureGlob(filepath.ToSlash(specDir)), filepath.FromSlash(selector)))
 		if err != nil {
 			return nil, fmt.Errorf("invalid feature glob %q: %w", selector, err)
 		}
