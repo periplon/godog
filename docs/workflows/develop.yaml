@@ -8,11 +8,13 @@ tasks:
     features:
       - ../../workflow/features/compiler.feature
       - ../../workflow/features/cli.feature
+      - ../../workflow/features/incremental.feature
     prompt: |
       Extend this Godog implementation workflow package using the supplied Gherkin
-      requirements. Own workflow/acceptance_test.go only. Add executable Godog
+      requirements. Own workflow/acceptance_test.go and workflow/incremental_acceptance_test.go only. Add executable Godog
       acceptance bindings and go test integration for the compiler requirements,
-      exercising the actual Compile API. Cover deterministic generation and invalid
+      exercising the actual Compile and CompileIncremental APIs. Cover semantic scenario
+      selection, implementation ancestry, deterministic generation and invalid
       specifications plus expanded Gherkin context. Do not create fake assertions
       or silently skip missing behavior. Write tests first, observe expected
       failures, minimally fix your owned test harness, run go test ./workflow.
@@ -25,13 +27,13 @@ tasks:
   - id: harden
     features:
       - ../../workflow/features/executor.feature
+      - ../../workflow/features/resume.feature
     prompt: |
       Review and improve the implementation workflow executor against the supplied
-      Gherkin requirements. Own workflow/executor*.go and workflow/process*.go only.
-      First fix a confirmed adapter defect: the installed Codex CLI rejects a
-      prompt beginning with a dash unless a -- option terminator precedes it.
-      Add and run a failing regression for literal leading-dash prompts, then
-      minimally fix argv construction and update affected exact-argv fixtures.
+      Gherkin requirements. Own workflow/executor*.go, workflow/resume*.go, and workflow/process*.go only.
+      Keep the leading-dash prompt regression green: Codex requires a --
+      option terminator before the prompt. Exercise durable recovery through
+      Resume, proving completed steps do not repeat and live runs cannot restart.
       Add regression coverage for process-tree cancellation and dependency failure
       propagation. Write tests first, run them, and fix production defects only
       when the new tests expose them; run go test ./workflow. Prioritize cancellation,
@@ -45,6 +47,7 @@ tasks:
     features:
       - ../../workflow/features/compiler.feature
       - ../../workflow/features/cli.feature
+      - ../../workflow/features/incremental.feature
     prompt: |
       Independently review the workflow compiler and CLI against these requirements.
       Inspect implementation and tests. Run targeted checks and adversarial probes.
@@ -58,6 +61,7 @@ tasks:
     needs: [acceptance, harden]
     features:
       - ../../workflow/features/executor.feature
+      - ../../workflow/features/resume.feature
     prompt: |
       Independently review worktree isolation, process execution, retries, cancellation,
       dependency integration, artifacts and failure truthfulness. Run adversarial

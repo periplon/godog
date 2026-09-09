@@ -16,5 +16,7 @@ jobs:
           go-version: stable
       - name: Verify compiler and native process-tree cancellation
         run: go test -count=1 ./workflow -run '^(TestCompile.*|TestCompilerAcceptance|TestWindowsTaskkillCommandTargetsProcessTree|TestRunTaskCommandCancelsNestedProcessTreeWindows)$'
+      - name: Verify incremental planning and execution restart through CLI
+        run: go test -count=1 ./cmd/godog/internal -run '^TestWorkflowCLI(IncrementalDefaultAndFullOverride|ResumeRetriesOnlyUnfinishedSteps)$'
       - name: Build workflow CLI
         run: go build ./cmd/godog

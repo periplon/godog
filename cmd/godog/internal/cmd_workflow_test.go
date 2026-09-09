@@ -27,7 +27,7 @@ func TestWorkflowPlanCLI(t *testing.T) {
 		var out bytes.Buffer
 		cmd.SetOut(&out)
 		cmd.SetErr(&out)
-		cmd.SetArgs([]string{"plan", spec})
+		cmd.SetArgs([]string{"plan", spec, "--full"})
 		if err := cmd.Execute(); err != nil {
 			t.Fatal(err)
 		}
@@ -198,5 +198,33 @@ func TestBuiltWorkflowCLIEmitsJSONAndReturnsNonzeroOnTaskFailure(t *testing.T) {
 				t.Fatalf("task status = %q, want %q", result.Tasks[0].Status, wantStatus)
 			}
 		})
+	}
+}
+
+func TestWorkflowCLIIncrementalAndResumeContract(t *testing.T) {
+	root := CreateWorkflowCmd()
+	plan, _, err := root.Find([]string{"plan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Flags().Lookup("repo") == nil || plan.Flags().Lookup("full") == nil {
+		t.Fatal("plan must support repository-aware incremental selection and --full")
+	}
+	run, _, err := root.Find([]string{"run"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Flags().Lookup("full") == nil {
+		t.Fatal("run must support --full")
+	}
+	resume, _, err := root.Find([]string{"resume"})
+	if err != nil || resume == root {
+		t.Fatal("explicit resume command missing")
+	}
+	resume.SetOut(&bytes.Buffer{})
+	resume.SetErr(&bytes.Buffer{})
+	root.SetArgs([]string{"resume"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("resume must require an execution directory")
 	}
 }

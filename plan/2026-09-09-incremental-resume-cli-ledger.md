@@ -11,3 +11,5 @@
 - No-op execution red: explicit tracked no-op failed with `plan must contain at least one task`. Validated tracking now permits only the explicit no-op form; it writes a normal result without executing tasks. Focused regression passes.
 - Built-binary CLI regression now reaches actual behavior: a successful full run did not seed implementation history, so the next default plan returned one task instead of zero. Connected automatic record publication after persisted successful Execute/Resume results; failed and no-op runs do not publish new implementation records.
 - Resume now validates tracked source inputs before changing the saved execution.
+- Green built-binary CLI checks: initial --full run records implementation, default planning/run become no-op, no-op resume succeeds, inserting a scenario selects only that scenario, failed-step resume preserves successful-step side-effect count, and resuming the completed execution repeats no task. Focused package checks passed in 2.7s.
+- CLI plan remains stateless with --full; run --full uses tracked CompileFull. Windows CI now runs the same built-binary incremental and recovery checks.
