@@ -19,8 +19,8 @@ tasks:
       If production behavior is defective, report exact evidence; do not edit
       compiler.go. A dependent reconcile task owns production review fixes.
       Do not bind dogfood.feature: the outer run is verified after completion.
-      Do not edit the feature requirements or workflow policy. Do not push or
-      create PRs. Implement code, not merely recommendations. Record concise
+      Do not edit the feature requirements or workflow policy. Do not commit, push, or
+      create PRs; the runner commits changes. Do not add attribution. Implement code, not merely recommendations. Record concise
       test evidence in your final response. Use installed dependencies only.
   - id: harden
     features:
@@ -33,7 +33,8 @@ tasks:
       when the new tests expose them; run go test ./workflow. Prioritize cancellation,
       dependency integration, Codex argument fidelity, and truthful failure status.
       Do not modify compiler, shared types, CLI, feature requirements, or DSL files.
-      Do not push or create PRs. Produce actual tested implementation improvements.
+      Do not commit, push, or create PRs; the runner commits changes.
+      Do not add attribution. Produce actual tested implementation improvements.
       Record red/green test evidence and limitations in your final response.
   - id: review-compiler
     needs: [acceptance, harden]
@@ -47,7 +48,8 @@ tasks:
       .workflow-review/compiler.json as an object with a findings array; each finding
       has id, severity, file, description, and reproduction fields. An empty array
       means no actionable defect found. Record checked scope and test evidence in
-      the same object. Do not invent defects. Do not push or create PRs.
+      the same object. Do not invent defects. Do not commit, push, or create PRs; the runner commits changes.
+      Do not add attribution.
   - id: review-execution
     needs: [acceptance, harden]
     features:
@@ -59,7 +61,8 @@ tasks:
       .workflow-review/execution.json as an object with a findings array; each finding
       has id, severity, file, description, and reproduction fields. An empty array
       means no actionable defect found. Include checked scope and test evidence.
-      Do not invent defects. Do not push or create PRs.
+      Do not invent defects. Do not commit, push, or create PRs; the runner commits changes.
+      Do not add attribution.
   - id: reconcile
     needs: [review-compiler, review-execution]
     prompt: |
@@ -72,7 +75,8 @@ tasks:
       findings are fixed or disproven by concrete evidence). Check CLI behavior
       using a built binary as a subprocess, including nonzero failure exit and
       valid JSON stdout. Do not change feature requirements or weaken tests.
-      Do not push or create PRs.
+      Do not commit, push, or create PRs; the runner commits changes.
+      Do not add attribution.
   - id: verify
     needs: [reconcile]
     run: [go, test, -race, ./...]
