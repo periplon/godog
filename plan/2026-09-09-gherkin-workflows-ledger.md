@@ -9,3 +9,4 @@
 - Added source Gherkin requirements and self-hosted workflow policy. Real self-hosted run pending bootstrap.
 - Live Codex probe succeeded with `gpt-5.6-sol`, approval=never and sandbox=danger-full-access; exact CLI adapter invocation is usable with current authentication.
 - Independent self-host specification review found missing compiler/CLI repair ownership and outer-run verification recursion. Expanded DSL with two independent reviewers, a dependent reconciliation task, test and vet gates. Outer self-host evidence will be checked after the run rather than recursively bound inside it.
+- Tested the actual seven-task development DSL against the in-progress compiler twice: identical JSON plans, 24 unique requirement scenarios, expected parallel roots and review/reconciliation dependencies. Compiler and CLI tests still require integrated execution before claiming overall completion.

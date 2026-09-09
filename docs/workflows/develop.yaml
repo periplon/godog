@@ -71,8 +71,10 @@ tasks:
       regression first followed by the minimum fix. Run targeted tests after each
       fix. Keep original review files intact. Record each finding's disposition,
       regression, red/green evidence, and any unresolved blocker in
-      .workflow-review/resolution.json with an unresolved array (empty only if all
-      findings are fixed or disproven by concrete evidence). Check CLI behavior
+      .workflow-review/resolution.json with a resolutions array of objects containing
+      id, status (fixed or disproven), and nonempty evidence, plus an unresolved array
+      (empty only if all findings are fixed or disproven by concrete evidence).
+      Include one resolution for every finding ID. Check CLI behavior
       using a built binary as a subprocess, including nonzero failure exit and
       valid JSON stdout. Do not change feature requirements or weaken tests.
       Do not commit, push, or create PRs; the runner commits changes.
