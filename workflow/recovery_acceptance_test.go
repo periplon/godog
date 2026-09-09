@@ -127,12 +127,12 @@ func (w *recoveryAcceptance) unmergedRecordedWorkflow() error {
 	}
 	w.plan = plan
 	old := git(tgit{dir: w.repo}, "rev-parse", "HEAD")
-	git(tgit{dir: w.repo}, "commit", "--no-gpg-sign", "--allow-empty", "-qm", "temporary integrated result")
-	newHead := git(tgit{dir: w.repo}, "rev-parse", "HEAD")
-	if err := workflow.RecordImplementation(context.Background(), w.plan, successfulResult(w.plan, newHead), w.repo); err != nil {
+	newHead := git(tgit{dir: w.repo}, "commit-tree", "HEAD^{tree}", "-p", old, "-m", "temporary integrated result")
+	result := successfulResult(w.plan, old)
+	result.Commit = newHead
+	if err := workflow.RecordImplementation(context.Background(), w.plan, result, w.repo); err != nil {
 		return err
 	}
-	git(tgit{dir: w.repo}, "reset", "--hard", "-q", old)
 	return nil
 }
 
