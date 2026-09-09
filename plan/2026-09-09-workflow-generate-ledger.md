@@ -23,3 +23,9 @@
 - Added generator and CLI checks to native Windows CI. Windows execution is not claimed from local macOS checks.
 - Generated policies require review of dependency order and project-specific verification commands. Prompt success alone does not prove scenario correctness. Incremental planning may retain unchanged prerequisite tasks.
 - No JIRA ticket is associated with this task.
+
+## Delivery
+
+- Created draft PR https://github.com/periplon/godog/pull/2 with `includes-ai-code` on `jmca/workflow-generate`.
+- Implementation commit: c3738f6. Initial hosted native Windows checks passed for that commit; pull-request checks continue separately.
+- Separate worktree retained for review; source checkout remains on main. No merge or release performed.
