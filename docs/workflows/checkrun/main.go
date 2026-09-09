@@ -51,9 +51,17 @@ type taskResult struct {
 }
 
 type reviewFile struct {
-	Findings json.RawMessage `json:"findings"`
-	Scope    string          `json:"scope"`
-	Evidence string          `json:"evidence"`
+	Findings     json.RawMessage    `json:"findings"`
+	Scope        string             `json:"scope"`
+	Evidence     string             `json:"evidence"`
+	CheckedScope []string           `json:"checked_scope"`
+	TestEvidence []reviewTestResult `json:"test_evidence"`
+}
+
+type reviewTestResult struct {
+	Command string `json:"command"`
+	Result  string `json:"result"`
+	Details string `json:"details"`
 }
 
 type resolutionFile struct {
@@ -306,11 +314,8 @@ func checkReviews(integration string, tasks map[string]taskResult) error {
 		if err := readGitJSON(integration, tasks[producer.task].Commit, filepath.ToSlash(filepath.Join(".workflow-review", producer.name)), &review); err != nil {
 			return fmt.Errorf("review %s in producer task %s: %w", producer.name, producer.task, err)
 		}
-		if strings.TrimSpace(review.Scope) == "" {
-			return fmt.Errorf("review %s scope is missing", producer.name)
-		}
-		if strings.TrimSpace(review.Evidence) == "" {
-			return fmt.Errorf("review %s evidence is missing", producer.name)
+		if err := checkReviewEvidence(producer.name, review); err != nil {
+			return err
 		}
 		var items []finding
 		if len(review.Findings) == 0 {
@@ -379,6 +384,32 @@ func checkReviews(integration string, tasks map[string]taskResult) error {
 		if !resolved[id] {
 			return fmt.Errorf("finding %q lacks a resolution", id)
 		}
+	}
+	return nil
+}
+
+func checkReviewEvidence(name string, review reviewFile) error {
+	for index, scope := range review.CheckedScope {
+		if strings.TrimSpace(scope) == "" {
+			return fmt.Errorf("review %s checked_scope entry %d is empty", name, index)
+		}
+	}
+	if strings.TrimSpace(review.Scope) == "" && len(review.CheckedScope) == 0 {
+		return fmt.Errorf("review %s scope or checked_scope is missing", name)
+	}
+	for index, evidence := range review.TestEvidence {
+		if strings.TrimSpace(evidence.Command) == "" {
+			return fmt.Errorf("review %s test_evidence entry %d command is empty", name, index)
+		}
+		if strings.TrimSpace(evidence.Result) == "" {
+			return fmt.Errorf("review %s test_evidence entry %d result is empty", name, index)
+		}
+		if strings.TrimSpace(evidence.Details) == "" {
+			return fmt.Errorf("review %s test_evidence entry %d details are empty", name, index)
+		}
+	}
+	if strings.TrimSpace(review.Evidence) == "" && len(review.TestEvidence) == 0 {
+		return fmt.Errorf("review %s evidence or test_evidence is missing", name)
 	}
 	return nil
 }

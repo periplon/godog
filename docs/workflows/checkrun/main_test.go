@@ -13,11 +13,52 @@ import (
 )
 
 const completeCompilerReview = `{"findings":[{"id":"C-1","severity":"high","file":"workflow/compiler.go","description":"compiler defect","reproduction":"go test ./workflow"}],"scope":"compiler and CLI","evidence":"go test ./workflow"}`
+const structuredCompilerReview = `{"findings":[{"id":"C-1","severity":"high","file":"workflow/compiler.go","description":"compiler defect","reproduction":"go test ./workflow"}],"checked_scope":["compiler and CLI"],"test_evidence":[{"command":"go test ./workflow","result":"pass","details":"workflow tests passed"}]}`
 
 func TestCheckAcceptsCompleteSelfHostEvidence(t *testing.T) {
 	runDir := makeFixture(t)
 	if err := check(runDir); err != nil {
 		t.Fatalf("complete evidence rejected: %v", err)
+	}
+}
+
+func TestCheckAcceptsStructuredReviewEvidence(t *testing.T) {
+	runDir := makeFixtureWithOptions(t, fixtureOptions{
+		compilerReview:   structuredCompilerReview,
+		hardenProduction: true,
+	})
+	if err := check(runDir); err != nil {
+		t.Fatalf("structured review evidence rejected: %v", err)
+	}
+}
+
+func TestCheckRejectsIncompleteStructuredReviewEvidence(t *testing.T) {
+	tests := []struct {
+		name   string
+		review string
+		want   string
+	}{
+		{
+			name:   "empty checked scope",
+			review: `{"findings":[{"id":"C-1","severity":"high","file":"workflow/compiler.go","description":"compiler defect","reproduction":"go test ./workflow"}],"checked_scope":[""],"test_evidence":[{"command":"go test ./workflow","result":"pass","details":"passed"}]}`,
+			want:   "checked_scope",
+		},
+		{
+			name:   "empty test command",
+			review: `{"findings":[{"id":"C-1","severity":"high","file":"workflow/compiler.go","description":"compiler defect","reproduction":"go test ./workflow"}],"checked_scope":["compiler"],"test_evidence":[{"command":"","result":"pass","details":"passed"}]}`,
+			want:   "command",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			runDir := makeFixtureWithOptions(t, fixtureOptions{
+				compilerReview:   test.review,
+				hardenProduction: true,
+			})
+			if err := check(runDir); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("got %v, want error containing %q", err, test.want)
+			}
+		})
 	}
 }
 
