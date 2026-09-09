@@ -1,0 +1,20 @@
+{
+  "resolutions": [
+    {
+      "id": "EXEC-001",
+      "status": "fixed",
+      "evidence": "Regression TestExecuteWorktreeSetupFailureReportsOnlyExistingArtifacts. RED: go test ./workflow -run '^TestExecuteWorktreeSetupFailureReportsOnlyExistingArtifacts$' -count=1 failed because Worktree named a nonexistent path. GREEN: the same command passed after creating the log before setup, recording setup failure there, and assigning Worktree only after git worktree add succeeds."
+    },
+    {
+      "id": "EXEC-002",
+      "status": "fixed",
+      "evidence": "Regressions TestExecuteReportsIntegrationCancellationWithoutCallingItAConflict and TestExecuteReportsIntegrationHookFailureWithoutCallingItAConflict, with the existing conflict test strengthened. RED: the cancellation regression failed with 'workflow: integration conflict ... context canceled'. GREEN: targeted tests passed after cancellation was reported with its context error, true conflicts were identified by unmerged paths, and other merge failures were reported as operational failures."
+    },
+    {
+      "id": "EXEC-003",
+      "status": "fixed",
+      "evidence": "Windows regressions TestWindowsTaskkillCommandTargetsProcessTree and TestRunTaskCommandCancelsNestedProcessTreeWindows. RED: GOOS=windows GOARCH=amd64 go test -c -o /tmp/godog-workflow-windows-red.exe ./workflow failed with undefined newTaskkillCommand. GREEN: the Windows test binary cross-compiled after adding a Windows-specific taskkill.exe /T /F /PID implementation; the behavioral regression exercises a real parent and descendant when run on Windows. The Darwin runner cannot execute the Windows binary, while existing Unix descendant cancellation remains covered locally."
+    }
+  ],
+  "unresolved": []
+}

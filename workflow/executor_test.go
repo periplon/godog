@@ -277,6 +277,35 @@ func TestExecuteTaskTimeoutIsFailureNotCallerCancellation(t *testing.T) {
 	}
 }
 
+func TestExecuteWorktreeSetupFailureReportsOnlyExistingArtifacts(t *testing.T) {
+	repo := newTestRepository(t)
+	output := filepath.Join(t.TempDir(), "run")
+	plan := &Plan{Version: 1, Tasks: []Task{{TaskSpec: TaskSpec{
+		ID: "setup-timeout", Run: []string{"true"}, Attempts: 1, Timeout: "1ns",
+	}}}}
+
+	result, err := Execute(context.Background(), plan, RunOptions{Dir: repo, OutputDir: output, Jobs: 1})
+	if err == nil {
+		t.Fatal("Execute() succeeded after worktree setup timeout")
+	}
+	task := result.Tasks[0]
+	if task.Status != "failed" {
+		t.Fatalf("task status = %q, want failed", task.Status)
+	}
+	if task.Worktree != "" {
+		t.Fatalf("failed setup reported nonexistent worktree %q", task.Worktree)
+	}
+	if task.Log == "" {
+		t.Fatal("failed setup did not report a log")
+	}
+	if _, statErr := os.Stat(task.Log); statErr != nil {
+		t.Fatalf("failed setup log missing: %v", statErr)
+	}
+	if log := readFile(t, task.Log); !strings.Contains(log, "create worktree") {
+		t.Fatalf("failed setup log lacks failure context: %q", log)
+	}
+}
+
 func TestExecutePreservesIntegrationConflict(t *testing.T) {
 	repo := newTestRepository(t)
 	plan := &Plan{Version: 1, Tasks: []Task{
@@ -284,7 +313,7 @@ func TestExecutePreservesIntegrationConflict(t *testing.T) {
 		{TaskSpec: TaskSpec{ID: "b", Run: []string{"sh", "-c", "printf b > seed.txt"}, Attempts: 1}},
 	}}
 	result, err := Execute(context.Background(), plan, RunOptions{Dir: repo, OutputDir: filepath.Join(t.TempDir(), "run"), Jobs: 2})
-	if err == nil || !strings.Contains(err.Error(), "integration") {
+	if err == nil || !strings.Contains(err.Error(), "integration conflict") {
 		t.Fatalf("error = %v, want integration conflict", err)
 	}
 	if result.IntegrationWorktree == "" {
@@ -292,6 +321,85 @@ func TestExecutePreservesIntegrationConflict(t *testing.T) {
 	}
 	if _, statErr := os.Stat(result.IntegrationWorktree); statErr != nil {
 		t.Fatalf("integration worktree missing: %v", statErr)
+	}
+}
+
+func TestExecuteReportsIntegrationHookFailureWithoutCallingItAConflict(t *testing.T) {
+	repo := newTestRepository(t)
+	hooks := t.TempDir()
+	hook := filepath.Join(hooks, "pre-merge-commit")
+	if err := os.WriteFile(hook, []byte(`#!/bin/sh
+case "$PWD" in
+  */integration) exit 42 ;;
+esac
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, repo, "config", "core.hooksPath", hooks)
+	plan := &Plan{Version: 1, Tasks: []Task{{TaskSpec: TaskSpec{
+		ID: "change", Run: []string{"sh", "-c", "printf change > change.txt"}, Attempts: 1,
+	}}}}
+
+	result, err := Execute(context.Background(), plan, RunOptions{Dir: repo, OutputDir: filepath.Join(t.TempDir(), "run"), Jobs: 1})
+	if err == nil || !strings.Contains(err.Error(), "integration merge failed") {
+		t.Fatalf("error = %v, want integration merge failure; result = %+v", err, result)
+	}
+	if strings.Contains(err.Error(), "conflict") {
+		t.Fatalf("hook failure misreported as conflict: %v", err)
+	}
+}
+
+func TestExecuteReportsIntegrationCancellationWithoutCallingItAConflict(t *testing.T) {
+	repo := newTestRepository(t)
+	hooks := t.TempDir()
+	ready := filepath.Join(t.TempDir(), "integration-hook-ready")
+	t.Setenv("WORKFLOW_INTEGRATION_HOOK_READY", ready)
+	hook := filepath.Join(hooks, "pre-merge-commit")
+	if err := os.WriteFile(hook, []byte(`#!/bin/sh
+case "$PWD" in
+  */integration)
+    touch "$WORKFLOW_INTEGRATION_HOOK_READY"
+    while :; do sleep 1; done
+    ;;
+esac
+`), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, repo, "config", "core.hooksPath", hooks)
+	plan := &Plan{Version: 1, Tasks: []Task{{TaskSpec: TaskSpec{
+		ID: "change", Run: []string{"sh", "-c", "printf change > change.txt"}, Attempts: 1,
+	}}}}
+	type outcome struct {
+		result *Result
+		err    error
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan outcome, 1)
+	output := filepath.Join(t.TempDir(), "run")
+	go func() {
+		result, err := Execute(ctx, plan, RunOptions{Dir: repo, OutputDir: output, Jobs: 1})
+		done <- outcome{result: result, err: err}
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(ready); err == nil {
+			break
+		} else if !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("integration hook did not start")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	got := <-done
+	if !errors.Is(got.err, context.Canceled) {
+		t.Fatalf("error = %v, want context canceled; result = %+v", got.err, got.result)
+	}
+	if strings.Contains(got.err.Error(), "conflict") {
+		t.Fatalf("cancellation misreported as conflict: %v", got.err)
 	}
 }
 
