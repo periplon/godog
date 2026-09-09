@@ -53,10 +53,17 @@ func TestRunAttemptLogWriteFailureSubprocess(t *testing.T) {
 	if limit > current.Max {
 		t.Fatalf("requested file size limit %d exceeds maximum %d", limit, current.Max)
 	}
+	original := current
 	current.Cur = limit
 	if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &current); err != nil {
 		t.Fatal(err)
 	}
+
+	t.Cleanup(func() {
+		if err := syscall.Setrlimit(syscall.RLIMIT_FSIZE, &original); err != nil {
+			t.Errorf("restore file size limit: %v", err)
+		}
+	})
 
 	_, exitCode, err := runAttempt(context.Background(), t.TempDir(), logPath, task, "", "", 1)
 	if err == nil {
