@@ -127,7 +127,7 @@ func (w *recoveryAcceptance) unmergedRecordedWorkflow() error {
 	}
 	w.plan = plan
 	old := git(tgit{dir: w.repo}, "rev-parse", "HEAD")
-	git(tgit{dir: w.repo}, "commit", "--allow-empty", "-qm", "temporary integrated result")
+	git(tgit{dir: w.repo}, "commit", "--no-gpg-sign", "--allow-empty", "-qm", "temporary integrated result")
 	newHead := git(tgit{dir: w.repo}, "rev-parse", "HEAD")
 	if err := workflow.RecordImplementation(context.Background(), w.plan, successfulResult(w.plan, newHead), w.repo); err != nil {
 		return err
@@ -167,7 +167,7 @@ func (w *recoveryAcceptance) makeIncrementalFixture() error {
 		return err
 	}
 	git(tgit{dir: w.repo}, "add", ".")
-	git(tgit{dir: w.repo}, "commit", "-qm", "fixture")
+	git(tgit{dir: w.repo}, "commit", "--no-gpg-sign", "-qm", "fixture")
 	return nil
 }
 
@@ -340,7 +340,7 @@ func (w *recoveryAcceptance) initRepo() error {
 		return err
 	}
 	git(tgit{dir: w.repo}, "add", ".")
-	git(tgit{dir: w.repo}, "commit", "-qm", "baseline")
+	git(tgit{dir: w.repo}, "commit", "--no-gpg-sign", "-qm", "baseline")
 	return nil
 }
 
@@ -429,6 +429,8 @@ func behaviorFeature(background, firstResult string) string {
 }
 
 func incrementalSpec(prompt string) string {
+	prepare, _ := json.Marshal([]string{os.Args[0], "-test.run=^TestRecoveryTaskHelper$", "--", "count"})
+	verify, _ := json.Marshal([]string{os.Args[0], "-test.run=^TestRecoveryTaskHelper$", "--", "count"})
 	return fmt.Sprintf(`version: 1
 name: incremental
 model: codex
@@ -436,7 +438,7 @@ features: [features/*.feature]
 tasks:
   - id: prepare
     features: [features/setup.feature]
-    run: ["%s", "-test.run=^TestRecoveryTaskHelper$", "--", count]
+    run: %s
   - id: implement
     needs: [prepare]
     features: [features/behavior.feature]
@@ -444,8 +446,8 @@ tasks:
   - id: verify
     needs: [implement]
     features: [features/behavior.feature]
-    run: ["%s", "-test.run=^TestRecoveryTaskHelper$", "--", count]
-`, os.Args[0], prompt, os.Args[0])
+    run: %s
+`, prepare, prompt, verify)
 }
 
 func successfulResult(plan *workflow.Plan, commit string) *workflow.Result {
