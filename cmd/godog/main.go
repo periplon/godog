@@ -14,7 +14,7 @@ func main() {
 	versionCmd := internal.CreateVersionCmd()
 
 	workflowCmd := internal.CreateWorkflowCmd()
-	rootCmd.AddCommand(&buildCmd, &runCmd, &versionCmd, &workflowCmd)
+	rootCmd.AddCommand(&buildCmd, &runCmd, &versionCmd, workflowCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)

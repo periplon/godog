@@ -12,10 +12,13 @@ import (
 )
 
 // CreateWorkflowCmd creates implementation workflow commands.
-func CreateWorkflowCmd() cobra.Command {
-	root := cobra.Command{Use: "workflow", Short: "Compile and execute implementation workflows from Gherkin"}
+func CreateWorkflowCmd() *cobra.Command {
+	root := &cobra.Command{Use: "workflow", Short: "Compile and execute implementation workflows from Gherkin"}
 	planCmd := &cobra.Command{
-		Use: "plan SPEC", Short: "Print a deterministic JSON plan without executing tasks", Args: cobra.ExactArgs(1),
+		SilenceUsage: true,
+		Use:          "plan SPEC",
+		Short:        "Print a deterministic JSON plan without executing tasks",
+		Args:         cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			plan, err := workflow.Compile(args[0])
 			if err != nil {
@@ -28,8 +31,11 @@ func CreateWorkflowCmd() cobra.Command {
 	}
 	var opts workflow.RunOptions
 	runCmd := &cobra.Command{
-		Use: "run SPEC", Short: "Execute tasks in isolated Git worktrees", Args: cobra.ExactArgs(1),
-		Long: "Execute a workflow in isolated Git worktrees. Codex tasks run with approvals and sandbox disabled (YOLO). Only execute trusted workflow specifications. The caller checkout is not updated; results are preserved in an integration worktree.",
+		SilenceUsage: true,
+		Use:          "run SPEC",
+		Short:        "Execute tasks in isolated Git worktrees",
+		Args:         cobra.ExactArgs(1),
+		Long:         "Execute a workflow in isolated Git worktrees. Codex tasks run with approvals and sandbox disabled (YOLO). Only execute trusted workflow specifications. The caller checkout is not updated; results are preserved in an integration worktree.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Jobs < 1 {
 				return fmt.Errorf("jobs must be positive")
