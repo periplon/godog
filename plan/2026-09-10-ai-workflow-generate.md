@@ -9,6 +9,6 @@ Add opt-in Codex planning while preserving deterministic generation. Codex shoul
 
 ## Completion audit
 
-Implementation and independent reviews complete. Regression tests cover option/default compatibility, full selected-feature coverage, grouped and parallel dependency graphs, model/effort propagation, process cleanup, resume identity and atomic output. Live Codex planning confirmed differentiated task choices. Full local gates and final changed-package gates passed; draft delivery follows.
+Implementation and independent reviews complete. Regression tests cover option/default compatibility, full selected-feature coverage, grouped and parallel dependency graphs, model/effort propagation, process cleanup, resume identity and atomic output. Live Codex planning confirmed differentiated task choices. Full local gates and final changed-package gates passed; draft PR #5 is published; hosted validation is monitored separately.
 
 Documentation-only usage/help updates are exempt from TDD; runnable examples and CLI behavior have executable checks. No durable learning beyond existing process conventions warranted a LEARNINGS.md addition.

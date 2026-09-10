@@ -23,3 +23,9 @@
 - Model-generated isolation remains an assessed proposal requiring YAML review; structural validation cannot prove arbitrary future implementation independence.
 - Final focused race/staticcheck/recipe-contract checks and draft PR delivery recorded below.
 - Final `staticcheck ./...`, `REQUIRE_JUST=1 go test ./internal/devtools`, and `go test -race ./workflow ./cmd/godog/internal` passed after the final production changes.
+
+## Delivery
+
+- Draft PR: https://github.com/periplon/godog/pull/5, required contribution label applied.
+- Implementation commit: c5612dde71a488ad149ef5d3546695447c3d6288.
+- Worktree clean after commit/push; hosted checks started. No merge or deployment performed.
