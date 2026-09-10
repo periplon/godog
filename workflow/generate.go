@@ -12,18 +12,22 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// GenerateOptions configures deterministic generation of a prompt-based policy.
+// GenerateOptions configures generation of a prompt-based policy.
 // Output is relative to the caller's working directory; feature selectors are
 // relative to Dir. The output directory must already exist.
 type GenerateOptions struct {
-	Output string
-	Dir    string
-	Model  string
-	Prompt string
+	Output          string
+	Dir             string
+	Model           string
+	Prompt          string
+	Generator       string
+	CodexBinary     string
+	ReasoningEffort string
+	Models          []string
 }
 
-// Generate converts Gherkin files into a validated workflow without invoking
-// Codex or executing any task. It never replaces an existing output path.
+// Generate converts Gherkin files into a validated workflow. Codex planning is
+// opt-in; no implementation tasks run. It never replaces an existing output path.
 func Generate(ctx context.Context, selectors []string, opts GenerateOptions) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -34,6 +38,9 @@ func Generate(ctx context.Context, selectors []string, opts GenerateOptions) err
 	if strings.TrimSpace(opts.Model) == "" {
 		return errors.New("workflow model is required")
 	}
+	if err := validateGenerateOptions(&opts); err != nil {
+		return err
+	}
 	output, err := filepath.Abs(opts.Output)
 	if err != nil {
 		return fmt.Errorf("resolve output: %w", err)
@@ -43,6 +50,12 @@ func Generate(ctx context.Context, selectors []string, opts GenerateOptions) err
 	} else if !os.IsNotExist(err) {
 		return fmt.Errorf("inspect output: %w", err)
 	}
+	candidate, err := os.CreateTemp(filepath.Dir(output), ".godog-workflow-*.yaml")
+	if err != nil {
+		return fmt.Errorf("create workflow candidate: %w", err)
+	}
+	defer os.Remove(candidate.Name())
+	defer candidate.Close()
 	if opts.Dir == "" {
 		opts.Dir = "."
 	}
@@ -69,7 +82,7 @@ func Generate(ctx context.Context, selectors []string, opts GenerateOptions) err
 	if err != nil {
 		return err
 	}
-	spec := Spec{Version: workflowVersion, Name: "Generated feature workflow", Model: strings.TrimSpace(opts.Model)}
+	spec := Spec{Version: workflowVersion, Name: "Generated feature workflow", Model: strings.TrimSpace(opts.Model), ReasoningEffort: opts.ReasoningEffort}
 	needs := make([]string, 0, len(features))
 	for _, feature := range features {
 		uri, err := filepath.Rel(filepath.Dir(output), filepath.Join(dir, filepath.FromSlash(feature.uri)))
@@ -88,15 +101,16 @@ func Generate(ctx context.Context, selectors []string, opts GenerateOptions) err
 		spec.Tasks = append(spec.Tasks, TaskSpec{ID: id, Model: spec.Model, Needs: prerequisites, Features: []string{selector}, Attempts: 1, Prompt: withGeneratePrompt(generateImplementationPrompt, opts.Prompt)})
 	}
 	spec.Tasks = append(spec.Tasks, TaskSpec{ID: "review-all", Model: spec.Model, Needs: needs, Attempts: 1, Prompt: withGeneratePrompt(generateReviewPrompt, opts.Prompt)})
+	if opts.Generator == "codex" {
+		spec, err = generateCodexSpec(ctx, dir, features, spec.Features, opts)
+		if err != nil {
+			return err
+		}
+	}
 	content, err := yaml.Marshal(spec)
 	if err != nil {
 		return fmt.Errorf("encode generated workflow: %w", err)
 	}
-	candidate, err := os.CreateTemp(filepath.Dir(output), ".godog-workflow-*.yaml")
-	if err != nil {
-		return fmt.Errorf("create workflow candidate: %w", err)
-	}
-	defer os.Remove(candidate.Name())
 	if _, err := candidate.Write(content); err != nil {
 		candidate.Close()
 		return fmt.Errorf("write workflow candidate: %w", err)

@@ -57,3 +57,63 @@ func TestWorkflowGenerateCLIRequiresInputs(t *testing.T) {
 		}
 	}
 }
+
+func TestWorkflowGenerateCLIPlannerFlags(t *testing.T) {
+	cmd := CreateWorkflowCmd()
+	generate, _, err := cmd.Find([]string{"generate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"generator", "codex", "models", "reasoning-effort"} {
+		if generate.Flags().Lookup(name) == nil {
+			t.Errorf("missing --%s", name)
+		}
+	}
+}
+
+func TestWorkflowGenerateCLIEffort(t *testing.T) {
+	repo := t.TempDir()
+	if err := os.WriteFile(filepath.Join(repo, "sample.feature"), []byte("Feature: sample\n  Scenario: one\n    Given an outcome\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "generated.yaml")
+	cmd := CreateWorkflowCmd()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"generate", "*.feature", "--repo", repo, "--output", output, "--model", "test-model", "--generator", "deterministic", "--reasoning-effort", "xhigh"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := workflow.Compile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, task := range plan.Tasks {
+		if task.ReasoningEffort != "xhigh" {
+			t.Errorf("task %s effort = %q", task.ID, task.ReasoningEffort)
+		}
+	}
+}
+
+func TestWorkflowGenerateCLIRejectsPlannerOptions(t *testing.T) {
+	for _, flags := range [][]string{{"--generator", "unknown"}, {"--reasoning-effort", "max"}} {
+		t.Run(strings.Join(flags, " "), func(t *testing.T) {
+			repo := t.TempDir()
+			if err := os.WriteFile(filepath.Join(repo, "sample.feature"), []byte("Feature: sample\n  Scenario: one\n    Given an outcome\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			output := filepath.Join(repo, "generated.yaml")
+			cmd := CreateWorkflowCmd()
+			cmd.SetOut(&bytes.Buffer{})
+			cmd.SetErr(&bytes.Buffer{})
+			args := []string{"generate", "*.feature", "--repo", repo, "--output", output, "--model", "test-model"}
+			cmd.SetArgs(append(args, flags...))
+			if err := cmd.Execute(); err == nil {
+				t.Fatal("accepted invalid planner options")
+			}
+			if _, err := os.Stat(output); !os.IsNotExist(err) {
+				t.Fatalf("output exists: %v", err)
+			}
+		})
+	}
+}

@@ -17,8 +17,8 @@ func CreateWorkflowCmd() *cobra.Command {
 	var generateOpts workflow.GenerateOptions
 	generateCmd := &cobra.Command{
 		Use:          "generate FEATURE...",
-		Short:        "Generate a deterministic workflow YAML from feature files",
-		Long:         "Generate a workflow with one Codex implementation prompt per feature and a final review. Generation validates Gherkin without invoking Codex or executing tasks. Quote globs to resolve them relative to --repo. Review the generated policy before execution.",
+		Short:        "Generate a workflow YAML from feature files from feature files",
+		Long:         "Generate a workflow with implementation prompts and a final review. By default generation is deterministic, with one implementation task per feature. Use --generator codex to let Codex inspect the repository and plan dependencies, models, and reasoning efforts. Generation never executes workflow tasks. Quote globs to resolve them relative to --repo. Review the generated policy before execution.",
 		Args:         cobra.MinimumNArgs(1),
 		SilenceUsage: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -27,8 +27,12 @@ func CreateWorkflowCmd() *cobra.Command {
 	}
 	generateCmd.Flags().StringVar(&generateOpts.Output, "output", "", "New YAML file (relative to current directory; parent must exist)")
 	generateCmd.Flags().StringVar(&generateOpts.Dir, "repo", ".", "Base directory for feature paths and globs")
-	generateCmd.Flags().StringVar(&generateOpts.Model, "model", "", "Codex model for generated implementation and review tasks")
+	generateCmd.Flags().StringVar(&generateOpts.Model, "model", "", "Default task model and Codex planner model")
 	generateCmd.Flags().StringVar(&generateOpts.Prompt, "prompt", "", "Additional instructions for generated implementation and review tasks")
+	generateCmd.Flags().StringVar(&generateOpts.Generator, "generator", "deterministic", "Generation method: deterministic or codex")
+	generateCmd.Flags().StringVar(&generateOpts.CodexBinary, "codex", "", "Codex executable for planning (default codex)")
+	generateCmd.Flags().StringSliceVar(&generateOpts.Models, "models", nil, "Allowed task models for Codex planning (comma-separated; defaults to --model)")
+	generateCmd.Flags().StringVar(&generateOpts.ReasoningEffort, "reasoning-effort", "", "Planner/default task effort: low, medium, high, or xhigh")
 	_ = generateCmd.MarkFlagRequired("output")
 	_ = generateCmd.MarkFlagRequired("model")
 	var planRepo string

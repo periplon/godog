@@ -26,7 +26,7 @@ the executables declared by the workflow.
 /tmp/godog workflow plan workflow.yaml --full
 ```
 
-`generate` writes a new workflow YAML without calling Codex or executing tasks.
+By default, `generate` writes a new workflow YAML without calling Codex or executing tasks.
 It validates the feature files, sorts and deduplicates their paths, and creates
 one implementation prompt task per feature in a serial dependency chain plus
 a final review task. Task IDs are derived from paths. With unchanged inputs,
@@ -42,9 +42,9 @@ Feature paths and quoted globs resolve relative to `--repo` (default `.`).
 `--output` resolves relative to the current directory; its parent must exist and
 an existing output is never overwritten. Generated feature references are
 relative to the output file, so nested workflow directories work. No Git
-repository or Codex installation is needed to generate or inspect a full plan.
+repository or Codex installation is needed for deterministic generation or inspecting a full plan.
 
-Review and edit the YAML before running it. Generation cannot infer dependencies
+Review and edit the YAML before running it. Deterministic generation cannot infer dependencies
 between features or the project's test commands. The conservative chain lets
 each implementation build on earlier commits; adjust `needs` when features have
 a known dependency order or can safely run independently. Add `run` tasks for
@@ -52,6 +52,39 @@ deterministic verification. Incremental planning may retain unchanged earlier
 implementation tasks as prerequisites. Codex implementation
 and review results are not deterministic; a successful review task does not
 prove correctness.
+
+### Plan with Codex
+
+```sh
+/tmp/godog workflow generate 'features/*.feature' --repo . \
+  --output workflow.yaml --generator codex --model gpt-5.6-sol \
+  --models gpt-5.6-luna,gpt-5.6-sol \
+  --reasoning-effort high
+/tmp/godog workflow plan workflow.yaml --full
+```
+
+Codex planning requires an installed, authenticated Codex CLI (`--codex` can
+select its executable). `--model` selects the planner and the default task model;
+`--models` supplies the task models it may choose from. Choose model identifiers
+available to your account. Give model-specific complexity guidance with
+`--prompt` if needed. Without `--models`, tasks use `--model`.
+
+The planner inspects the selected requirements and repository in read-only mode,
+then proposes task dependencies, a model, and reasoning effort for each task.
+It is instructed to use parallel tasks only for isolated implementation work,
+and to serialize shared code changes or uncertain dependencies. A final review
+joins the implementation work. Generation validates the proposed plan before
+publishing the YAML; it does not execute its tasks. Review its isolation
+assumptions before running with `workflow run --jobs 2`.
+
+`--reasoning-effort` sets the planner effort and default generated task effort.
+Codex planning can adapt individual tasks to `low`, `medium`, `high`, or `xhigh`
+according to complexity. The deterministic generator uses the supplied effort
+uniformly. Codex planning defaults to `medium` when this option is omitted. Deterministic
+generation without an explicit effort preserves the Codex configuration default. Model support for each effort depends on your provider.
+
+The CLI uses Codex's structured-output and final-message file options; see the
+[official non-interactive documentation](https://learn.chatgpt.com/docs/non-interactive-mode).
 
 ## Workflow DSL version 1
 
@@ -86,12 +119,17 @@ Every task declares exactly one action:
 - `prompt`: instructions for the initial and currently only agent adapter, Codex.
   `model` on the task overrides the workflow default. The effective command is
   `codex exec -m MODEL --dangerously-bypass-approvals-and-sandbox -- PROMPT`.
+  An optional workflow or task `reasoning_effort` adds
+  `-c 'model_reasoning_effort="high"'` (using the selected value). Task values
+  override the workflow default; allowed values are `low`, `medium`, `high`, `xhigh`.
 
 Task fields:
 
 | Field | Meaning |
 | --- | --- |
 | `id` | Unique identifier, also used for worktree and artifact naming |
+| `model` | Task model override; otherwise inherits workflow model |
+| `reasoning_effort` | Task effort override; otherwise inherits workflow effort |
 | `needs` | IDs that must succeed before this task starts |
 | `features` | Optional globs selecting from the workflow's feature files; omitted selects all |
 | `attempts` | Maximum attempts, 1 by default, at most 5 |

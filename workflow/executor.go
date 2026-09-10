@@ -263,6 +263,9 @@ func validatePlan(plan *Plan) error {
 	}
 	byID := make(map[string]Task, len(plan.Tasks))
 	for _, task := range plan.Tasks {
+		if err := validateReasoningEffort(task.ReasoningEffort); err != nil {
+			return fmt.Errorf("workflow: task %q: %w", task.ID, err)
+		}
 		if !executorSafeTaskID(task.ID) {
 			return fmt.Errorf("workflow: task ID %q is not a safe path component", task.ID)
 		}
@@ -562,7 +565,12 @@ func runAttempt(ctx context.Context, worktree, logPath string, task Task, codexB
 	tail := &tailBuffer{limit: retryFeedbackLimit}
 	var cmd *exec.Cmd
 	if len(task.Run) == 0 {
-		cmd = exec.Command(codexBinary, "exec", "-m", task.Model, "--dangerously-bypass-approvals-and-sandbox", "--", prompt)
+		args := []string{"exec", "-m", task.Model}
+		if task.ReasoningEffort != "" {
+			args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", task.ReasoningEffort))
+		}
+		args = append(args, "--dangerously-bypass-approvals-and-sandbox", "--", prompt)
+		cmd = exec.Command(codexBinary, args...)
 	} else {
 		cmd = exec.Command(task.Run[0], task.Run[1:]...)
 	}
