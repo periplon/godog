@@ -5,22 +5,24 @@ import "context"
 
 // Spec is the versioned YAML workflow policy.
 type Spec struct {
-	Version  int        `yaml:"version" json:"version"`
-	Name     string     `yaml:"name" json:"name"`
-	Features []string   `yaml:"features" json:"features"`
-	Model    string     `yaml:"model" json:"model"`
-	Tasks    []TaskSpec `yaml:"tasks" json:"tasks"`
+	Version         int        `yaml:"version" json:"version"`
+	Name            string     `yaml:"name" json:"name"`
+	Features        []string   `yaml:"features" json:"features"`
+	Model           string     `yaml:"model" json:"model"`
+	Tasks           []TaskSpec `yaml:"tasks" json:"tasks"`
+	ReasoningEffort string     `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 }
 type TaskSpec struct {
-	ExpectExit int      `yaml:"expected_exit" json:"expected_exit"`
-	Timeout    string   `yaml:"timeout" json:"timeout,omitempty"`
-	ID         string   `yaml:"id" json:"id"`
-	Needs      []string `yaml:"needs" json:"needs"`
-	Features   []string `yaml:"features" json:"features"`
-	Run        []string `yaml:"run" json:"run,omitempty"`
-	Prompt     string   `yaml:"prompt" json:"prompt,omitempty"`
-	Model      string   `yaml:"model" json:"model,omitempty"`
-	Attempts   int      `yaml:"attempts" json:"attempts"`
+	ExpectExit      int      `yaml:"expected_exit" json:"expected_exit"`
+	Timeout         string   `yaml:"timeout" json:"timeout,omitempty"`
+	ID              string   `yaml:"id" json:"id"`
+	Needs           []string `yaml:"needs" json:"needs"`
+	Features        []string `yaml:"features" json:"features"`
+	Run             []string `yaml:"run" json:"run,omitempty"`
+	Prompt          string   `yaml:"prompt" json:"prompt,omitempty"`
+	Model           string   `yaml:"model" json:"model,omitempty"`
+	Attempts        int      `yaml:"attempts" json:"attempts"`
+	ReasoningEffort string   `yaml:"reasoning_effort,omitempty" json:"reasoning_effort,omitempty"`
 }
 type Scenario struct {
 	ID    string   `json:"id"`

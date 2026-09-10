@@ -252,6 +252,9 @@ func escapeTableCell(value string) string {
 }
 
 func compileTasks(spec Spec, attemptsSet []bool, features []compiledFeature) ([]Task, error) {
+	if err := validateReasoningEffort(spec.ReasoningEffort); err != nil {
+		return nil, err
+	}
 	if len(spec.Tasks) == 0 {
 		return nil, errors.New("workflow tasks are empty")
 	}
@@ -270,6 +273,9 @@ func compileTasks(spec Spec, attemptsSet []bool, features []compiledFeature) ([]
 			taskSpec.Attempts = 1
 		}
 		if strings.TrimSpace(taskSpec.Prompt) != "" {
+			if taskSpec.ReasoningEffort == "" {
+				taskSpec.ReasoningEffort = spec.ReasoningEffort
+			}
 			taskSpec.Model = strings.TrimSpace(taskSpec.Model)
 			if taskSpec.Model == "" {
 				taskSpec.Model = strings.TrimSpace(spec.Model)
@@ -307,6 +313,9 @@ func compileTasks(spec Spec, attemptsSet []bool, features []compiledFeature) ([]
 }
 
 func validateTaskSpec(task *TaskSpec, defaultModel string, attemptsExplicit bool) error {
+	if err := validateReasoningEffort(task.ReasoningEffort); err != nil {
+		return fmt.Errorf("task %q: %w", task.ID, err)
+	}
 	if strings.TrimSpace(task.ID) == "" {
 		return errors.New("task id is empty")
 	}
@@ -456,4 +465,13 @@ func topologicalTasks(tasksByID map[string]Task) ([]Task, error) {
 		return nil, errors.New("workflow contains a dependency cycle")
 	}
 	return ordered, nil
+}
+
+func validateReasoningEffort(effort string) error {
+	switch effort {
+	case "", "low", "medium", "high", "xhigh":
+		return nil
+	default:
+		return fmt.Errorf("reasoning_effort must be low, medium, high, or xhigh; got %q", effort)
+	}
 }
