@@ -34,7 +34,9 @@ options and relative directory layout, generation produces the same bytes.
 Generated implementation prompts request failing tests before implementation;
 `--prompt 'Additional project instructions'` adds instructions to implementation
 and review tasks.
-`--model` is required and selects the model used when the workflow is run.
+`--model` is required and writes the selected model to the workflow default and
+every generated implementation and review task. To change models afterward,
+edit the task models, or remove them to inherit the workflow default.
 
 Feature paths and quoted globs resolve relative to `--repo` (default `.`).
 `--output` resolves relative to the current directory; its parent must exist and

@@ -85,9 +85,9 @@ func Generate(ctx context.Context, selectors []string, opts GenerateOptions) err
 			prerequisites = []string{needs[len(needs)-1]}
 		}
 		needs = append(needs, id)
-		spec.Tasks = append(spec.Tasks, TaskSpec{ID: id, Needs: prerequisites, Features: []string{selector}, Attempts: 1, Prompt: withGeneratePrompt(generateImplementationPrompt, opts.Prompt)})
+		spec.Tasks = append(spec.Tasks, TaskSpec{ID: id, Model: spec.Model, Needs: prerequisites, Features: []string{selector}, Attempts: 1, Prompt: withGeneratePrompt(generateImplementationPrompt, opts.Prompt)})
 	}
-	spec.Tasks = append(spec.Tasks, TaskSpec{ID: "review-all", Needs: needs, Attempts: 1, Prompt: withGeneratePrompt(generateReviewPrompt, opts.Prompt)})
+	spec.Tasks = append(spec.Tasks, TaskSpec{ID: "review-all", Model: spec.Model, Needs: needs, Attempts: 1, Prompt: withGeneratePrompt(generateReviewPrompt, opts.Prompt)})
 	content, err := yaml.Marshal(spec)
 	if err != nil {
 		return fmt.Errorf("encode generated workflow: %w", err)

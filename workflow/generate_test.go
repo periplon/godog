@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"go.yaml.in/yaml/v3"
 )
 
 func generateFixture(t *testing.T) (string, GenerateOptions) {
@@ -19,6 +21,33 @@ func generateFixture(t *testing.T) (string, GenerateOptions) {
 	}
 	return dir, GenerateOptions{Dir: dir, Output: filepath.Join(dir, "workflow.yaml"), Model: "test-model"}
 }
+func TestGenerateSerializesSelectedModelOnTasks(t *testing.T) {
+	_, opts := generateFixture(t)
+	opts.Model = "  selected-model  "
+	if err := Generate(context.Background(), []string{"*.feature"}, opts); err != nil {
+		t.Fatal(err)
+	}
+	contents, err := os.ReadFile(opts.Output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec Spec
+	if err := yaml.Unmarshal(contents, &spec); err != nil {
+		t.Fatal(err)
+	}
+	if spec.Model != "selected-model" {
+		t.Fatalf("workflow model = %q, want selected-model", spec.Model)
+	}
+	if len(spec.Tasks) != 3 {
+		t.Fatalf("wanted two implementation tasks and final review, got %d", len(spec.Tasks))
+	}
+	for _, task := range spec.Tasks {
+		if task.Model != spec.Model {
+			t.Errorf("generated task %s model = %q, want %q", task.ID, task.Model, spec.Model)
+		}
+	}
+}
+
 func TestGenerateDeterministicCoverage(t *testing.T) {
 	dir, opts := generateFixture(t)
 	opts.Prompt = "Follow repository conventions."
